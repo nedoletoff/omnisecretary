@@ -81,7 +81,7 @@ make vikunja-admin
 5. Задачи: `make vikunja-admin`, войти на `http://<ip-pi>:8081`, сменить пароль
    и удалить файл `/srv/omnisecretary/secrets/vikunja-admin.txt`.
 6. Пресеты: создать API-ключ (Settings → Account → API Keys) и выполнить
-   `WEBUI_API_KEY=... make presets -- --base-model <id модели>`.
+   `WEBUI_API_KEY=... make presets ARGS="--base-model <id модели>"`.
 7. Проверить `make smoke`.
 8. Настроить бэкапы в cron (см. ниже).
 
@@ -110,7 +110,7 @@ make backup     # бэкап
 make update     # обновление по фиксированным тегам
 make reload     # перечитать конфиг nginx
 make vikunja-admin  # создать администратора задач
-make presets    # импорт пресетов (WEBUI_API_KEY=... make presets -- --base-model <id>)
+make presets ARGS="--base-model <id>"  # импорт пресетов (нужен WEBUI_API_KEY)
 ```
 
 ## Бэкапы

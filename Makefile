@@ -51,5 +51,5 @@ shell-qdrant: ## Shell в контейнере Qdrant
 vikunja-admin: ## Создать администратора Vikunja (идемпотентно)
 	./scripts/init-vikunja.sh
 
-presets: ## Импорт пресетов в Open WebUI (нужны WEBUI_API_KEY и --base-model)
-	./scripts/import-presets.sh
+presets: ## Импорт пресетов: make presets ARGS="--base-model <id>"
+	./scripts/import-presets.sh $(ARGS)

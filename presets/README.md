@@ -38,6 +38,8 @@ vision: false
 
 ```bash
 WEBUI_API_KEY=sk-... ./scripts/import-presets.sh --base-model deepseek-chat
+# или через make:
+WEBUI_API_KEY=sk-... make presets ARGS="--base-model deepseek-chat"
 ```
 
 Без `WEBUI_API_KEY` скрипт только соберёт `presets/models.json` — его можно
