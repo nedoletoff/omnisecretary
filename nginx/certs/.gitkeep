@@ -1,0 +1,2 @@
+Каталог для TLS-сертификатов (fullchain.pem, privkey.pem).
+Содержимое игнорируется git — см. .gitignore и nginx/conf.d/10-ssl.conf.example.

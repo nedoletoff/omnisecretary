@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+#
+# Бэкап OmniSecretary:
+#   - pg_dump (custom format) базы Open WebUI;
+#   - снапшоты всех коллекций Qdrant через snapshot API;
+#   - git-синхронизация Obsidian-вольта (если он есть);
+#   - опционально — файлы Open WebUI (--with-files).
+#
+# Использование:
+#   ./scripts/backup.sh [--with-files] [--keep N]
+#
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+
+WITH_FILES=0
+KEEP=14
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --with-files) WITH_FILES=1 ;;
+        --keep)       KEEP="${2:?нужно число}"; shift ;;
+        -h|--help)    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) die "Неизвестный аргумент: $1" ;;
+    esac
+    shift
+done
+
+load_env
+detect_docker
+
+BACKUP_ROOT="${DATA_ROOT}/backups"
+TS="$(date +%Y%m%d-%H%M%S)"
+DEST="$BACKUP_ROOT/$TS"
+
+mkdir -p "$DEST"
+log_info "Бэкап в $DEST"
+
+# ── 1. PostgreSQL ────────────────────────────────────────────
+log_info "pg_dump…"
+compose exec -T postgres pg_dump \
+    -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc \
+    > "$DEST/postgres-${POSTGRES_DB}.dump"
+[[ -s "$DEST/postgres-${POSTGRES_DB}.dump" ]] || die "pg_dump вернул пустой файл"
+log_ok "PostgreSQL: $(du -h "$DEST/postgres-${POSTGRES_DB}.dump" | cut -f1)"
+
+# ── 2. Qdrant ────────────────────────────────────────────────
+log_info "Снапшоты Qdrant…"
+collections="$(curl -fsS --max-time 15 -H "api-key: ${QDRANT_API_KEY}" \
+    "http://127.0.0.1:6333/collections" \
+    | python3 -c 'import json,sys; print("\n".join(c["name"] for c in json.load(sys.stdin)["result"]["collections"]))' \
+    2>/dev/null || true)"
+
+if [[ -z "$collections" ]]; then
+    log_warn "Коллекции Qdrant не найдены (пустая память) — пропускаю"
+else
+    while read -r col; do
+        [[ -z "$col" ]] && continue
+        snap="$(curl -fsS --max-time 60 -X POST \
+            -H "api-key: ${QDRANT_API_KEY}" \
+            "http://127.0.0.1:6333/collections/${col}/snapshots" \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["name"])')"
+        "${DOCKER[@]}" cp "omni-qdrant:/qdrant/snapshots/${snap}" "$DEST/" >/dev/null
+        curl -fsS -X DELETE -H "api-key: ${QDRANT_API_KEY}" \
+            "http://127.0.0.1:6333/collections/${col}/snapshots/${snap}" >/dev/null || true
+        log_ok "Qdrant: $col → $snap"
+    done <<< "$collections"
+fi
+
+# ── 3. Obsidian-вольт ────────────────────────────────────────
+VAULT_PATH="${VAULT_PATH:-${DATA_ROOT}/vault}"
+if [[ -d "$VAULT_PATH/.git" ]]; then
+    log_info "Синхронизация Obsidian-вольта…"
+    if [[ -n "$(git -C "$VAULT_PATH" status --porcelain)" ]]; then
+        git -C "$VAULT_PATH" add -A
+        git -C "$VAULT_PATH" commit -m "chore: автосохранение вольта $(date +%F)" >/dev/null
+    fi
+    if git -C "$VAULT_PATH" remote get-url origin >/dev/null 2>&1; then
+        git -C "$VAULT_PATH" push --quiet 2>/dev/null \
+            && log_ok "Вольт отправлен в origin" \
+            || log_warn "Не удалось отправить вольт (нет сети/доступа). Локальный коммит сохранён."
+    else
+        log_warn "У вольта нет remote origin — только локальный коммит"
+    fi
+else
+    log_info "Obsidian-вольт не найден ($VAULT_PATH) — пропускаю"
+fi
+
+# ── 4. Файлы Open WebUI (опционально) ────────────────────────
+if [[ "$WITH_FILES" == "1" ]]; then
+    log_info "Архив файлов Open WebUI…"
+    tar -czf "$DEST/openwebui-data.tgz" \
+        --exclude='./cache' --exclude='./vector_db' \
+        -C "${DATA_ROOT}/volumes/openwebui" .
+    log_ok "Open WebUI files: $(du -h "$DEST/openwebui-data.tgz" | cut -f1)"
+fi
+
+# ── 5. Контрольные суммы и ротация ───────────────────────────
+( cd "$DEST" && sha256sum ./* > SHA256SUMS 2>/dev/null || true )
+log_ok "Контрольные суммы записаны"
+
+mapfile -t old < <(find "$BACKUP_ROOT" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' | sort -r | tail -n +$((KEEP + 1)))
+for d in "${old[@]:-}"; do
+    [[ -z "$d" ]] && continue
+    log_info "Удаляю старый бэкап $d"
+    rm -rf "${BACKUP_ROOT:?}/$d"
+done
+
+log_ok "Готово: $DEST ($(du -sh "$DEST" | cut -f1))"

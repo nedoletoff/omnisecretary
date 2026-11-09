@@ -1,0 +1,279 @@
+# OmniSecretary — базовый стек (этап 1)
+#
+# Все версии образов зафиксированы. Обновление — только осознанно, через
+# scripts/update.sh и правку тега здесь (см. docs/decisions.md).
+#
+# Профиль памяти рассчитан на Raspberry Pi 4 / 4 ГБ:
+#   nginx 32M + open-webui 1280M + postgres 384M + qdrant 512M + redis 64M
+#
+# Запуск: make up  (или docker compose up -d)
+
+name: omnisecretary
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ─────────────────────────────────────────────────────────────
+  # Reverse proxy: единственная точка входа снаружи.
+  # ─────────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.30.6-alpine
+    container_name: omni-nginx
+    restart: unless-stopped
+    depends_on:
+      open-webui:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/snippets:/etc/nginx/snippets:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./nginx/www:/var/www/certbot:ro
+    networks:
+      - frontend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    mem_limit: 32m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # Ядро: Open WebUI. Один бэкенд для веба, Telegram и API.
+  # ─────────────────────────────────────────────────────────────
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.13.3
+    container_name: omni-open-webui
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      # ── База данных ──
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_POOL_SIZE: "5"
+      DATABASE_ENABLE_SESSION_SHARING: "False"
+
+      # ── Векторная память (Qdrant, векторы на диске — экономия RAM) ──
+      VECTOR_DB: qdrant
+      QDRANT_URI: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      QDRANT_ON_DISK: "true"
+      QDRANT_PREFER_GRPC: "false"
+
+      # ── Эмбеддинги: только облако, локальные модели на Pi не запускаем ──
+      RAG_EMBEDDING_ENGINE: openai
+      RAG_OPENAI_API_BASE_URL: ${EMBEDDING_API_BASE_URL}
+      RAG_OPENAI_API_KEY: ${EMBEDDING_API_KEY}
+      RAG_EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      RAG_EMBEDDING_BATCH_SIZE: "16"
+      ENABLE_RAG_HYBRID_SEARCH: "false"
+      RAG_FILE_MAX_SIZE: "50"
+
+      # ── Основная LLM (OpenAI-совместимый облачный API) ──
+      OPENAI_API_BASE_URL: ${OPENAI_API_BASE_URL}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ENABLE_OLLAMA_API: "false"
+      ENABLE_EVALUATION_ARENA_MODELS: "false"
+
+      # ── Веб-сокеты и сессии (общие между вкладками и сервисами) ──
+      WEBSOCKET_MANAGER: redis
+      WEBSOCKET_REDIS_URL: redis://redis:6379/0
+
+      # ── Безопасность и доступ ──
+      WEBUI_AUTH: "true"
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      WEBUI_URL: ${WEBUI_URL}
+      ENABLE_SIGNUP: "false"
+      DEFAULT_USER_ROLE: "user"
+      ENABLE_OPENAI_API: "true"
+      ENABLE_COMMUNITY_SHARING: "false"
+
+      # ── Приватность и телеметрия ──
+      ANONYMIZED_TELEMETRY: "false"
+      ENABLE_VERSION_UPDATE_CHECK: "false"
+      SCARF_NO_ANALYTICS: "true"
+      DO_NOT_TRACK: "true"
+
+      # ── Прочее ──
+      WEBUI_NAME: "OmniSecretary"
+      DEFAULT_LOCALE: "ru-RU"
+      GLOBAL_LOG_LEVEL: "INFO"
+      ENABLE_WEB_SEARCH: "false"
+      TZ: ${TZ:-UTC}
+    volumes:
+      - openwebui_data:/app/backend/data
+    # Порт наружу не публикуем: доступ только через nginx.
+    # Для отладки с хоста раскомментируйте строку ниже.
+    # ports:
+    #   - "127.0.0.1:3000:8080"
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=5).status == 200 else 1)"
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    mem_limit: 1280m
+    memswap_limit: 1536m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # PostgreSQL (+pgvector как резервный векторный бэкенд)
+  # ─────────────────────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:0.8.7-pg16
+    container_name: omni-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: ${TZ:-UTC}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: 384m
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # Qdrant — векторная память
+  # ─────────────────────────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:v1.20.0
+    container_name: omni-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+      QDRANT__SERVICE__ENABLE_TLS: "false"
+      QDRANT__STORAGE__ON_DISK_PAYLOAD: "true"
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - qdrant_data:/qdrant/storage
+      - qdrant_snapshots:/qdrant/snapshots
+    # Только localhost: нужен для бэкапов (snapshot API) и smoke-тестов.
+    ports:
+      - "127.0.0.1:6333:6333"
+    networks:
+      - backend
+    healthcheck:
+      # В образе Qdrant есть bash; проверяем доступность HTTP-порта.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # Redis — веб-сокеты и кэш сессий (не хранилище данных)
+  # ─────────────────────────────────────────────────────────────
+  redis:
+    image: redis:8.8.4-alpine
+    container_name: omni-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - "60 1"
+      - --loglevel
+      - warning
+      - --maxmemory
+      - 64mb
+      - --maxmemory-policy
+      - allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+networks:
+  # nginx ↔ open-webui
+  frontend:
+    driver: bridge
+  # open-webui ↔ postgres/qdrant/redis. Наружу не выходит.
+  backend:
+    driver: bridge
+
+volumes:
+  # Тома привязаны к каталогам на диске данных (DATA_ROOT),
+  # чтобы бэкап и перенос на внешний HDD были предсказуемыми.
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/volumes/postgres
+  qdrant_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/volumes/qdrant
+  qdrant_snapshots:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/volumes/qdrant-snapshots
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/volumes/redis
+  openwebui_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/volumes/openwebui

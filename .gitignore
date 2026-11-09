@@ -1,0 +1,31 @@
+# Секреты — никогда в git
+.env
+.env.*
+!.env.example
+
+# Данные и бэкапы (живут на диске данных, не в репозитории)
+data/
+backups/
+*.dump
+*.snapshot
+
+# TLS-сертификаты и ACME
+nginx/certs/*
+!nginx/certs/.gitkeep
+nginx/www/*
+!nginx/www/.gitkeep
+
+# Obsidian-вольт (отдельный git-репозиторий)
+vault/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Мусор
+*.log
+.DS_Store
+.idea/
+.vscode/
