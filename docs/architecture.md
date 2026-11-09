@@ -5,33 +5,35 @@
 ```
                     LAN / Cloudflare Tunnel
                               │
-                    :80 (HTTP) │ :443 (HTTPS)
+                 :80 / :443   │   :8081 (только LAN)
                     ┌─────────▼──────────┐
                     │       nginx        │  reverse proxy
                     │  WS / SSE / ACME   │  mem_limit 32M
-                    └─────────┬──────────┘
-                              │ network: frontend
-                    ┌─────────▼──────────┐
-                    │     open-webui     │  ядро: чаты, RAG, календарь,
-                    │   ghcr.io v0.13.3  │  пресеты, API, веб-сокеты
-                    │  mem_limit 1280M   │
-                    └──┬──────┬──────┬───┘
-                       │      │      │   network: backend
-             ┌─────────▼┐ ┌───▼────┐ ┌▼─────────┐
-             │ postgres │ │ qdrant │ │  redis   │
-             │ pg16+vec │ │ v1.19  │ │ 8.8      │
-             │  384M    │ │  512M  │ │  64M     │
-             └──────────┘ └────────┘ └──────────┘
+                    └────┬───────────┬───┘
+                         │ frontend  │
+                    ┌────▼───────┐ ┌─▼──────────┐
+                    │ open-webui │ │  vikunja   │  задачи, CalDAV
+                    │  v0.13.3   │ │  v2.8.0    │  mem_limit 192M
+                    │  1280M     │ └─────┬──────┘
+                    └──┬──────┬──┘       │ network: backend
+                       │      │          │
+          ┌────────────▼┐ ┌───▼────┐ ┌───▼──────┐
+          │  postgres   │ │ qdrant │ │  redis   │
+          │  pg16+vec   │ │ v1.19  │ │  8.8     │
+          │    384M     │ │  512M  │ │   64M    │
+          └─────────────┘ └────────┘ └──────────┘
 ```
 
 ## Сети
 
 | Сеть | Кто в ней | Наружу |
 |---|---|---|
-| `frontend` | nginx, open-webui | nginx публикует 80/443 |
-| `backend` | open-webui, postgres, qdrant, redis | нет (Qdrant — только 127.0.0.1:6333) |
+| `frontend` | nginx, open-webui, vikunja | nginx публикует 80/443/8081 |
+| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init | нет (Qdrant — только 127.0.0.1:6333) |
 
 nginx не имеет доступа к БД. Postgres/Qdrant/Redis не видны из LAN.
+Vikunja стоит в обеих сетях: nginx проксирует её через `frontend`,
+а к своей базе она ходит через `backend`.
 
 ## Порты
 
@@ -39,10 +41,12 @@ nginx не имеет доступа к БД. Postgres/Qdrant/Redis не вид�
 |---|---|---|
 | 80 | nginx | `0.0.0.0` |
 | 443 | nginx | `0.0.0.0` |
+| 8081 | nginx → Vikunja | `0.0.0.0` (только LAN, наружу не пробрасывать) |
 | 6333 | Qdrant | `127.0.0.1` (snapshot API для бэкапов) |
 | 5432 | PostgreSQL | только сеть `backend` |
 | 6379 | Redis | только сеть `backend` |
 | 8080 | Open WebUI | только сеть `frontend` |
+| 3456 | Vikunja | только внутри Docker-сетей |
 
 ## Тома
 
@@ -53,8 +57,10 @@ nginx не имеет доступа к БД. Postgres/Qdrant/Redis не вид�
 | `qdrant_snapshots` | `${DATA_ROOT}/volumes/qdrant-snapshots` | временные снапшоты | — |
 | `redis_data` | `${DATA_ROOT}/volumes/redis` | кэш/сессии | не нужен |
 | `openwebui_data` | `${DATA_ROOT}/volumes/openwebui` | загрузки, конфиг | `--with-files` |
+| `vikunja_data` | `${DATA_ROOT}/volumes/vikunja` | вложения задач | `--with-files` |
 | — | `${DATA_ROOT}/backups` | бэкапы | — |
 | — | `${DATA_ROOT}/vault` | Obsidian-вольт (git) | git push |
+| — | `${DATA_ROOT}/secrets` | пароли, созданные скриптами (600) | не бэкапить в git |
 | — | `${DATA_ROOT}/docker` | docker data-root | — |
 
 `${DATA_ROOT}` по умолчанию:
@@ -75,18 +81,23 @@ nginx не имеет доступа к БД. Postgres/Qdrant/Redis не вид�
 Telegram → bot (long polling) → API open-webui (`/api/chat/completions`
 с `chat_id`) → та же запись в PostgreSQL, что и веб.
 
-### Календарь и задачи (этап 2)
-Open WebUI (встроенный календарь) ↔ CalDAV Radicale.
-Vikunja ↔ PostgreSQL. MCP-сервер Vikunja (этап 4) даёт ассистенту
-создавать задачи на естественном языке.
+### Календарь и задачи
+- Календарь: Open WebUI → PostgreSQL (события, календари, гранты доступа).
+  CalDAV в Open WebUI v0.13.3 нет — см. ADR-016.
+- Задачи: браузер → nginx (:8081) → Vikunja → PostgreSQL (`vikunja`).
+  Vikunja отдаёт задачи по CalDAV (`/dav/`) для календарей на телефоне.
+- MCP-сервер Vikunja (этап 4) даёт ассистенту создавать задачи на
+  естественном языке.
 
 ## Порядок запуска
 
 1. `postgres` → healthy (`pg_isready`).
 2. `redis` → healthy (`PING`).
 3. `qdrant` → healthy (TCP 6333).
-4. `open-webui` → ждёт postgres/redis/qdrant, миграции БД, `/health`.
-5. `nginx` → стартует сразу, проксирует, когда ядро готово.
+4. `db-init` → создаёт БД `vikunja` и завершается с кодом 0.
+5. `open-webui` → ждёт postgres/redis/qdrant, миграции БД, `/health`.
+6. `vikunja` → ждёт postgres и успешный `db-init`, прогоняет свои миграции.
+7. `nginx` → стартует сразу, проксирует, когда ядро готово.
 
 `restart: unless-stopped` — после перезагрузки Pi стек поднимается сам.
 
@@ -99,10 +110,13 @@ Vikunja ↔ PostgreSQL. MCP-сервер Vikunja (этап 4) даёт асси�
 | postgres | 384 МБ |
 | qdrant | 512 МБ |
 | redis | 64 МБ |
-| **Итого лимитов** | **2272 МБ** |
+| vikunja | 192 МБ |
+| db-init | 128 МБ (одноразово) |
+| **Итого лимитов** | **2464 МБ** |
 
-ОС + Docker ≈ 600–800 МБ. Запас ~700 МБ и swap 2 ГБ.
+ОС + Docker ≈ 600–800 МБ. Запас ~500 МБ и swap 2 ГБ.
 Лимиты — потолок, не резервация: в простое стек занимает заметно меньше.
+На практике после старта занято ~1,9 ГБ (см. `free -h`).
 
 ## Внешний доступ
 

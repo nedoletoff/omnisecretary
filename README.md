@@ -12,8 +12,8 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 | Этап | Содержание | Статус |
 |---|---|---|
 | 1 | Ядро: Open WebUI + PostgreSQL + Qdrant + Redis + Nginx, скрипты | ✅ реализовано |
-| 2 | Календарь (Radicale) и задачи (Vikunja), пресеты | ⏳ следующий |
-| 3 | Telegram-бот, allowlist, многопользовательский режим | ⏳ |
+| 2 | Календарь Open WebUI, задачи (Vikunja), пресеты-«лица» | ✅ реализовано |
+| 3 | Telegram-бот, allowlist, многопользовательский режим | ⏳ следующий |
 | 4 | MCP: Obsidian, GitHub, Filesystem, SSH, CalDAV, Vikunja | ⏳ |
 | 5 | Голос: Vosk STT + Silero TTS | ⏳ |
 | 6 | Проактивность: утренний брифинг, напоминания, PWA | ⏳ |
@@ -24,13 +24,13 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 
 ```
 Интернет/LAN
-     │  :80 / :443
- ┌───▼──────────┐
- │    nginx     │  reverse proxy, WebSocket, SSE, ACME
- └───┬──────────┘
-     │ frontend
+     │  :80 / :443            :8081
  ┌───▼──────────┐        ┌────────────┐
- │  open-webui  │───────▶│ PostgreSQL │  чаты, пользователи, настройки
+ │    nginx     │───────▶│  Vikunja   │  задачи, CalDAV
+ └───┬──────────┘        └─────┬──────┘
+     │ frontend                │ backend
+ ┌───▼──────────┐        ┌─────▼──────┐
+ │  open-webui  │───────▶│ PostgreSQL │  чаты, календарь, задачи
  │   (ядро)     │        └────────────┘
  │              │───────▶│  Qdrant    │  векторная память
  │              │───────▶│   Redis    │  веб-сокеты, кэш
@@ -61,6 +61,9 @@ cd /opt/omnisecretary
 
 # 3. Вписать ключи LLM в .env, затем:
 make restart && make smoke
+
+# 4. Создать администратора Vikunja (задачи)
+make vikunja-admin
 ```
 
 `bootstrap-pi.sh` идемпотентен: повторный запуск не перезаписывает `.env`
@@ -75,8 +78,12 @@ make restart && make smoke
    `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`; выполнить `make restart`.
 3. Admin Panel → Settings → убедиться, что регистрация закрыта (`ENABLE_SIGNUP=false`).
 4. Создать остальных пользователей вручную (Admin Panel → Users).
-5. Проверить `make smoke`.
-6. Настроить бэкапы в cron (см. ниже).
+5. Задачи: `make vikunja-admin`, войти на `http://<ip-pi>:8081`, сменить пароль
+   и удалить файл `/srv/omnisecretary/secrets/vikunja-admin.txt`.
+6. Пресеты: создать API-ключ (Settings → Account → API Keys) и выполнить
+   `WEBUI_API_KEY=... make presets -- --base-model <id модели>`.
+7. Проверить `make smoke`.
+8. Настроить бэкапы в cron (см. ниже).
 
 ## Порты
 
@@ -84,10 +91,12 @@ make restart && make smoke
 |---|---|---|
 | 80 | nginx | LAN / Cloudflare Tunnel |
 | 443 | nginx | LAN, при настроенном TLS |
+| 8081 | nginx → Vikunja | LAN, наружу не пробрасывать |
 | 6333 | Qdrant | только `127.0.0.1` (бэкапы, диагностика) |
 | 5432 | PostgreSQL | только внутри `backend` |
 | 6379 | Redis | только внутри `backend` |
 | 8080 | Open WebUI | только внутри `frontend` |
+| 3456 | Vikunja | только внутри Docker-сетей |
 
 ## Команды
 
@@ -100,6 +109,8 @@ make smoke      # проверка здоровья
 make backup     # бэкап
 make update     # обновление по фиксированным тегам
 make reload     # перечитать конфиг nginx
+make vikunja-admin  # создать администратора задач
+make presets    # импорт пресетов (WEBUI_API_KEY=... make presets -- --base-model <id>)
 ```
 
 ## Бэкапы
@@ -124,13 +135,15 @@ make reload     # перечитать конфиг nginx
 - Эмбеддинги — только облачные (`RAG_EMBEDDING_ENGINE=openai`).
 - Векторы Qdrant хранятся на диске (`QDRANT_ON_DISK=true`).
 - `DATABASE_ENABLE_SESSION_SHARING=False`.
-- Лимиты памяти у каждого сервиса в `docker-compose.yml` (суммарно ~2,3 ГБ).
+- Лимиты памяти у каждого сервиса в `docker-compose.yml` (суммарно ~2,5 ГБ).
 - Docker data-root и все тома — на диске данных, не на SD.
 - Логи Docker ограничены (10 МБ × 3 на контейнер).
 
 ## Документация
 
 - [docs/architecture.md](docs/architecture.md) — сервисы, сети, тома, потоки данных.
+- [docs/calendar-tasks.md](docs/calendar-tasks.md) — календарь, задачи, пресеты, режимы чатов.
+- [docs/obsidian.md](docs/obsidian.md) — требования к Obsidian-вольту.
 - [docs/plan.md](docs/plan.md) — этапы и критерии перехода.
 - [docs/decisions.md](docs/decisions.md) — принятые решения и допущения.
 - [docs/security.md](docs/security.md) — секреты, доступ, подтверждения.

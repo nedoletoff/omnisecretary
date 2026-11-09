@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env
 
-.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant
+.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -47,3 +47,9 @@ shell-pg: ## psql в PostgreSQL
 
 shell-qdrant: ## Shell в контейнере Qdrant
 	$(COMPOSE) exec qdrant bash
+
+vikunja-admin: ## Создать администратора Vikunja (идемпотентно)
+	./scripts/init-vikunja.sh
+
+presets: ## Импорт пресетов в Open WebUI (нужны WEBUI_API_KEY и --base-model)
+	./scripts/import-presets.sh

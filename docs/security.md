@@ -21,6 +21,8 @@
 | `POSTGRES_PASSWORD` | пароль БД | `openssl rand -hex 24` |
 | `WEBUI_SECRET_KEY` | подпись сессий Open WebUI | `openssl rand -hex 32` |
 | `QDRANT_API_KEY` | доступ к Qdrant | `openssl rand -hex 24` |
+| `VIKUNJA_SECRET` | подпись сессий Vikunja | `openssl rand -hex 32` |
+| `VIKUNJA_ADMIN_PASSWORD` | пароль первого пользователя Vikunja (необязательно) | `openssl rand -hex 16` |
 | `OPENAI_API_KEY` | облачная LLM | из личного кабинета провайдера |
 | `EMBEDDING_API_KEY` | эмбеддинги | из личного кабинета провайдера |
 | `TELEGRAM_BOT_TOKEN` | бот (этап 3) | @BotFather |
@@ -29,6 +31,9 @@
 Правила:
 - Пароль Postgres — hex: попадает в `DATABASE_URL`, спецсимволы ломают URL.
 - `.env` не бэкапится автоматически и не покидает Pi.
+- Пароль пользователя Vikunja, созданный `make vikunja-admin`, лежит в
+  `${DATA_ROOT}/secrets/vikunja-admin.txt` (права 600). Сменить в интерфейсе
+  и удалить файл. Каталог `secrets/` в git не попадает.
 - При компрометации: заменить значение, `make restart`, при необходимости
   сменить пароль пользователя в Open WebUI.
 - `docker inspect` показывает env контейнера — доступ к Docker API равен
@@ -42,6 +47,8 @@ LAN ─────────────────────────�
 ```
 
 - Наружу открыт только nginx (80/443). Postgres, Redis, Open WebUI — нет.
+- Vikunja доступна через nginx на `:8081` — только LAN, на роутере не
+  пробрасывать. Регистрация в Vikunja закрыта, вход по логину и паролю.
 - Qdrant слушает `127.0.0.1:6333` и требует `api-key`.
 - UFW (рекомендуется): разрешить 22, 80, 443; остальное закрыть.
 - Не публиковать порт 3000 (Open WebUI) в интернет даже для отладки.

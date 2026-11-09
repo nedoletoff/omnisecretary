@@ -18,6 +18,9 @@ nginx/www/*
 # Obsidian-вольт (отдельный git-репозиторий)
 vault/
 
+# Сгенерированные артефакты пресетов
+presets/models.json
+
 # Python
 __pycache__/
 *.pyc

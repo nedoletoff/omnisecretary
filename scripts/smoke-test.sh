@@ -33,8 +33,17 @@ if [[ -z "$ps_json" ]]; then
     fail "docker compose ps не вернул данные (стек не запущен?)"
 else
     # Compose v2 отдаёт либо массив, либо по одному JSON на строку.
-    while IFS=$'\t' read -r svc state health; do
+    while IFS='|' read -r svc state health exitcode; do
         [[ -z "$svc" ]] && continue
+        # Одноразовые сервисы (db-init) должны успешно завершиться, а не работать.
+        if [[ "$svc" == "db-init" ]]; then
+            if [[ "$state" == "exited" && "$exitcode" == "0" ]]; then
+                pass "$svc: завершился успешно"
+            else
+                fail "$svc: $state (код $exitcode)"
+            fi
+            continue
+        fi
         if [[ "$state" == "running" && ( "$health" == "healthy" || -z "$health" ) ]]; then
             pass "$svc: $state${health:+ / $health}"
         else
@@ -53,7 +62,7 @@ except json.JSONDecodeError:
         if line:
             items.append(json.loads(line))
 for it in items:
-    print("\t".join([it.get("Service",""), it.get("State",""), it.get("Health","") or ""]))
+    print("|".join([it.get("Service",""), it.get("State",""), it.get("Health","") or "", str(it.get("ExitCode", 0))]))
 ')
 fi
 
@@ -74,6 +83,16 @@ check_http() {
 
 check_http "nginx /healthz"  "http://127.0.0.1/healthz" "200"
 check_http "open-webui /health (через nginx)" "http://127.0.0.1/health" "200"
+
+# ── 2b. Задачи (Vikunja) ─────────────────────────────────────
+if [[ "$QUIET" == "0" ]]; then
+    printf '\n%sЗадачи (Vikunja)%s\n' "$C_BOLD" "$C_RESET"
+fi
+check_http "vikunja /healthz (nginx :8081)" "http://127.0.0.1:8081/healthz" "200"
+check_http "vikunja /api/v1/info" "http://127.0.0.1:8081/api/v1/info" "200"
+
+# Календарь Open WebUI: эндпоинт существует и требует авторизации.
+check_http "open-webui /api/v1/calendars/ (без токена)" "http://127.0.0.1/api/v1/calendars/" "401"
 
 # ── 3. Qdrant ────────────────────────────────────────────────
 if [[ "$QUIET" == "0" ]]; then
@@ -102,6 +121,13 @@ if compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
     pass "postgres: схема Open WebUI инициализирована"
 else
     fail "postgres: схема Open WebUI ещё не создана (нормально при первом старте)"
+fi
+
+if compose exec -T postgres psql -U "$POSTGRES_USER" -d vikunja -tAc \
+    "select 1 from information_schema.tables where table_name='tasks' limit 1" >/dev/null 2>&1; then
+    pass "postgres: схема Vikunja инициализирована"
+else
+    fail "postgres: база vikunja пуста (запустите: make up)"
 fi
 
 # ── 5. Redis ─────────────────────────────────────────────────

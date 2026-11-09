@@ -190,15 +190,17 @@ create_directories() {
         "$DATA_ROOT"/volumes/qdrant-snapshots \
         "$DATA_ROOT"/volumes/redis \
         "$DATA_ROOT"/volumes/openwebui \
+        "$DATA_ROOT"/volumes/vikunja \
         "$DATA_ROOT"/backups \
         "$DATA_ROOT"/vault \
+        "$DATA_ROOT"/secrets \
         "$DATA_ROOT"/logs
 
     # Владельцы под UID внутри образов (иначе контейнер не запишет данные).
     run sudo chown -R 999:999 "$DATA_ROOT"/volumes/postgres "$DATA_ROOT"/volumes/redis
-    run sudo chown -R 1000:1000 "$DATA_ROOT"/volumes/qdrant "$DATA_ROOT"/volumes/qdrant-snapshots "$DATA_ROOT"/volumes/openwebui
+    run sudo chown -R 1000:1000 "$DATA_ROOT"/volumes/qdrant "$DATA_ROOT"/volumes/qdrant-snapshots "$DATA_ROOT"/volumes/openwebui "$DATA_ROOT"/volumes/vikunja
     # Остальное — текущему пользователю (бэкапы, вольт, логи).
-    run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/backups "$DATA_ROOT"/vault "$DATA_ROOT"/logs
+    run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/backups "$DATA_ROOT"/vault "$DATA_ROOT"/secrets "$DATA_ROOT"/logs
 
     run mkdir -p "$ROOT_DIR/nginx/certs" "$ROOT_DIR/nginx/www"
     log_ok "Каталоги готовы"
@@ -208,10 +210,21 @@ create_directories() {
 setup_env() {
     if [[ -f "$ENV_FILE" ]]; then
         log_ok ".env уже существует — секреты не трогаю"
-        # Мягко синхронизируем не-секретные значения.
-        [[ "$DRY_RUN" == "1" ]] || {
+        # Мягко синхронизируем не-секретные значения и досоздаём
+        # секреты, появившиеся в новых версиях (миграция .env).
+        if [[ "$DRY_RUN" != "1" ]]; then
             env_set DATA_ROOT "$DATA_ROOT"
-        }
+            if ! grep -q '^VIKUNJA_SECRET=..*' "$ENV_FILE"; then
+                env_set VIKUNJA_SECRET "$(gen_hex 32)"
+                log_info "Добавлен VIKUNJA_SECRET в .env"
+            fi
+            if ! grep -q '^VIKUNJA_PUBLIC_URL=..*' "$ENV_FILE"; then
+                local ip_existing
+                ip_existing="$(hostname -I 2>/dev/null | awk '{print $1}')"
+                [[ -n "$ip_existing" ]] || ip_existing="127.0.0.1"
+                env_set VIKUNJA_PUBLIC_URL "http://${ip_existing}:8081/"
+            fi
+        fi
         return 0
     fi
 
@@ -233,6 +246,8 @@ setup_env() {
     env_set POSTGRES_PASSWORD "$(gen_hex 24)"
     env_set WEBUI_SECRET_KEY "$(gen_hex 32)"
     env_set QDRANT_API_KEY "$(gen_hex 24)"
+    env_set VIKUNJA_SECRET "$(gen_hex 32)"
+    env_set VIKUNJA_PUBLIC_URL "http://${ip}:8081/"
 
     local host_tz="UTC"
     [[ -f /etc/timezone ]] && host_tz="$(cat /etc/timezone)"
