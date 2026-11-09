@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env
 
-.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin
+.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,9 @@ shell-qdrant: ## Shell в контейнере Qdrant
 
 vikunja-admin: ## Создать администратора Vikunja (идемпотентно)
 	./scripts/init-vikunja.sh
+
+init-webui: ## Владелец, API-ключ, провайдер LLM, пресеты (идемпотентно)
+	./scripts/init-webui.sh
 
 presets: ## Импорт пресетов: make presets ARGS="--base-model <id>"
 	./scripts/import-presets.sh $(ARGS)

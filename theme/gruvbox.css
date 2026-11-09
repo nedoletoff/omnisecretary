@@ -1,0 +1,163 @@
+/*
+ * OmniSecretary — тема Gruvbox для Open WebUI.
+ *
+ * Подключается как /static/custom.css (см. docker-compose.yml).
+ * custom.css грузится ДО основного бандла, поэтому переменные помечены
+ * !important — иначе Tailwind перезапишет их своим :root.
+ *
+ * Палитра: gruvbox dark/light (morhetz). Серые — от светлого к тёмному,
+ * поэтому тема одинаково аккуратно выглядит в light и dark режимах.
+ * Рекомендуемый режим: Settings → Interface → Theme → Dark.
+ */
+
+:root {
+  /* Нейтральная шкала gruvbox: 50 — самый светлый, 950 — самый тёмный */
+  --color-gray-50: #fbf1c7 !important;
+  --color-gray-100: #f2e5bc !important;
+  --color-gray-200: #ebdbb2 !important;
+  --color-gray-300: #d5c4a1 !important;
+  --color-gray-400: #bdae93 !important;
+  --color-gray-500: #a89984 !important;
+  --color-gray-600: #928374 !important;
+  --color-gray-700: #665c54 !important;
+  --color-gray-800: #504945 !important;
+  --color-gray-850: #3c3836 !important;
+  --color-gray-900: #32302f !important;
+  --color-gray-950: #282828 !important;
+
+  /* Синий → gruvbox blue (#458588 / #83a598) */
+  --color-blue-50: #e8f0ef !important;
+  --color-blue-100: #d6e4e2 !important;
+  --color-blue-200: #b8d1ce !important;
+  --color-blue-300: #83a598 !important;
+  --color-blue-400: #5f9184 !important;
+  --color-blue-500: #458588 !important;
+  --color-blue-600: #458588 !important;
+  --color-blue-700: #3a6f72 !important;
+  --color-blue-800: #2f5a5c !important;
+  --color-blue-900: #244648 !important;
+  --color-blue-950: #1a3335 !important;
+
+  /* Зелёный → gruvbox green (#98971a / #b8bb26) */
+  --color-green-50: #f2f3d6 !important;
+  --color-green-100: #e6e8c3 !important;
+  --color-green-200: #d6d99a !important;
+  --color-green-300: #b8bb26 !important;
+  --color-green-400: #a9ac20 !important;
+  --color-green-500: #98971a !important;
+  --color-green-600: #79740e !important;
+  --color-green-700: #5f5c0a !important;
+  --color-green-800: #4a4808 !important;
+  --color-green-900: #3a3a06 !important;
+  --color-green-950: #2b2b05 !important;
+
+  /* Жёлтый → gruvbox yellow (#d79921 / #fabd2f) */
+  --color-yellow-50: #fbf1c7 !important;
+  --color-yellow-100: #f7e7c0 !important;
+  --color-yellow-200: #f2d99b !important;
+  --color-yellow-300: #fabd2f !important;
+  --color-yellow-400: #e8ab26 !important;
+  --color-yellow-500: #d79921 !important;
+  --color-yellow-600: #b57614 !important;
+  --color-yellow-700: #8f5f10 !important;
+  --color-yellow-800: #71490c !important;
+  --color-yellow-900: #5c3d0a !important;
+  --color-yellow-950: #3f2a07 !important;
+
+  /* Красный → gruvbox red (#cc241d / #fb4934) */
+  --color-red-50: #fbe4e1 !important;
+  --color-red-100: #f6d2cf !important;
+  --color-red-200: #f0b3ad !important;
+  --color-red-300: #fb4934 !important;
+  --color-red-400: #e63b28 !important;
+  --color-red-500: #cc241d !important;
+  --color-red-600: #b01c17 !important;
+  --color-red-700: #8c1511 !important;
+  --color-red-800: #6e110e !important;
+  --color-red-900: #5a0d0a !important;
+  --color-red-950: #3d0907 !important;
+
+  /* Оранжевый → gruvbox orange (#d65d0e / #fe8019) */
+  --color-orange-50: #fbe6d5 !important;
+  --color-orange-100: #f7d3b5 !important;
+  --color-orange-300: #fe8019 !important;
+  --color-orange-500: #d65d0e !important;
+  --color-orange-600: #af3a03 !important;
+  --color-orange-700: #8c2e02 !important;
+  --color-orange-900: #5c1f01 !important;
+
+  /* Фиолетовый → gruvbox purple (#b16286 / #d3869b) */
+  --color-purple-50: #f6e5ec !important;
+  --color-purple-100: #eed3de !important;
+  --color-purple-300: #d3869b !important;
+  --color-purple-500: #b16286 !important;
+  --color-purple-600: #8f4a6d !important;
+  --color-purple-700: #743a58 !important;
+  --color-purple-900: #4d2639 !important;
+
+  /* Бирюзовый → gruvbox aqua (#689d6a / #8ec07c) */
+  --color-cyan-50: #e7f0e6 !important;
+  --color-cyan-100: #d5e5d3 !important;
+  --color-cyan-300: #8ec07c !important;
+  --color-cyan-500: #689d6a !important;
+  --color-cyan-600: #4f7a50 !important;
+  --color-cyan-700: #3f6140 !important;
+  --color-cyan-900: #2a412b !important;
+
+  /* Акцент бренда */
+  --color-brand-500: #d79921 !important;
+  --color-brand-600: #b57614 !important;
+
+  /* Скругления — как в gruvbox-темах терминала: почти прямые углы */
+  --radius-sm: 0.25rem !important;
+  --radius-md: 0.375rem !important;
+  --radius-lg: 0.5rem !important;
+  --radius-xl: 0.5rem !important;
+}
+
+/* Тёмная тема: фон и текст строго по gruvbox */
+.dark body,
+html.dark {
+  background-color: #282828 !important;
+  color: #ebdbb2 !important;
+}
+
+/* Код и цитаты — bg1 / bg2 */
+.dark pre,
+.dark code {
+  background-color: #3c3836 !important;
+  color: #ebdbb2 !important;
+}
+
+.dark blockquote {
+  border-left-color: #d79921 !important;
+  color: #bdae93 !important;
+}
+
+/* Скроллбары */
+.dark ::-webkit-scrollbar-thumb {
+  background-color: #504945 !important;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #665c54 !important;
+}
+
+/* Ссылки в ответах ассистента */
+.dark .markdown a {
+  color: #83a598 !important;
+}
+
+.dark .markdown a:hover {
+  color: #8ec07c !important;
+}
+
+/* Поле ввода — чуть светлее фона, как bg1 */
+.dark textarea,
+.dark input[type='text'],
+.dark input[type='email'],
+.dark input[type='password'] {
+  background-color: #32302f !important;
+  color: #ebdbb2 !important;
+  border-color: #504945 !important;
+}

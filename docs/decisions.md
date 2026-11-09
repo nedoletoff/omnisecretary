@@ -256,7 +256,7 @@ Instance-admin в Vikunja 2.x — платная функция, для одно
 
 **Решение:** пресеты хранятся как markdown-файлы с front matter
 (`presets/*.md`) — версионируются в git, ревьюятся как код. Импорт —
-`POST /api/v1/models/import` (скрипт `scripts/import-presets.py`),
+`POST /api/v1/models/import` (скрипт `scripts/import_presets.py`),
 идемпотентно по `id`. Базовая модель задаётся флагом `--base-model`,
 поэтому пресеты не привязаны к конкретному провайдеру.
 
@@ -280,6 +280,42 @@ Instance-admin в Vikunja 2.x — платная функция, для одно
 
 **Последствия:** без перезагрузки лимиты не работают — риск OOM на 4 ГБ.
 После ребута проверить `/sys/fs/cgroup/cgroup.controllers` (должен быть `memory`).
+
+---
+
+## ADR-019. Бесплатная тестовая LLM — Pollinations
+
+**Контекст:** нужен работающий чат до появления ключа платного провайдера.
+
+**Решение:** Pollinations (`https://text.pollinations.ai/openai`) —
+OpenAI-совместимый endpoint без ключа, модель `openai-fast` (gpt-oss-20b).
+Ключ-заглушка `pollinations` нужна только потому, что Open WebUI требует
+непустой ключ. Провайдер задаётся через `/openai/config/update`, а не
+правкой БД.
+
+**Ограничения:** публичный бесплатный сервис, rate limit, данные уходят
+третьей стороне. Только для тестов и демо, не для личных данных.
+Для продакшна — OpenRouter/DeepSeek/Groq и свой ключ.
+
+**Последствия:** `make init-webui` настраивает провайдера автоматически;
+смена провайдера — правка `.env` + `make restart && make init-webui`.
+
+---
+
+## ADR-020. Тема Gruvbox через custom.css
+
+**Контекст:** нужен единый Gruvbox-вид без форка фронтенда Open WebUI.
+
+**Решение:** Open WebUI подключает `/static/custom.css` до основного
+бандла и раздаёт его из `/app/build/static`. Монтируем `theme/gruvbox.css`
+ровно в этот путь (в `backend/open_webui/static` монтировать нельзя —
+backend копирует статику и падает с «are the same file»).
+Переопределяем CSS-переменные Tailwind v4 (`--color-*`) с `!important`,
+поэтому тема живёт в обоих режимах и не ломается при обновлении UI.
+
+**Последствия:** тема — обычный файл в git, применяется рестартом.
+При мажорном обновлении Open WebUI проверить, что имена переменных не
+изменились.
 
 ---
 

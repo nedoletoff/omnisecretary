@@ -104,6 +104,14 @@ services:
       WEBUI_URL: ${WEBUI_URL}
       ENABLE_SIGNUP: "false"
       DEFAULT_USER_ROLE: "user"
+      # API-ключи нужны скриптам (импорт пресетов, бэкапы).
+      ENABLE_API_KEYS: ${ENABLE_API_KEYS:-true}
+      # Права пользователей по умолчанию: без шаринга чатов/заметок.
+      USER_PERMISSIONS_FEATURES_API_KEYS: "true"
+      USER_PERMISSIONS_CHAT_SHARE: "false"
+      USER_PERMISSIONS_FEATURES_CHANNELS: "false"
+      USER_PERMISSIONS_NOTES_ALLOW_SHARING: "false"
+      USER_PERMISSIONS_FOLDERS_ALLOW_SHARING: "false"
       ENABLE_OPENAI_API: "true"
       ENABLE_COMMUNITY_SHARING: "false"
 
@@ -121,6 +129,11 @@ services:
       TZ: ${TZ:-UTC}
     volumes:
       - openwebui_data:/app/backend/data
+      # Тема Gruvbox. index.html подключает /static/custom.css до бандла;
+      # статика раздаётся из /app/build/static (backend копирует её туда
+      # при старте, поэтому монтировать в оба каталога нельзя — падает
+      # с «are the same file»).
+      - ./theme/gruvbox.css:/app/build/static/custom.css:ro
     # Порт наружу не публикуем: доступ только через nginx.
     # Для отладки с хоста раскомментируйте строку ниже.
     # ports:

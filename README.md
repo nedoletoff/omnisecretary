@@ -62,9 +62,21 @@ cd /opt/omnisecretary
 # 3. Вписать ключи LLM в .env, затем:
 make restart && make smoke
 
-# 4. Создать администратора Vikunja (задачи)
+# 4. Владелец, API-ключ, провайдер LLM и пресеты — одной командой
+make init-webui
+
+# 5. Создать пользователя Vikunja (задачи)
 make vikunja-admin
 ```
+
+По умолчанию в `.env.example` уже прописана **бесплатная тестовая модель**
+(Pollinations, без ключа). Для продакшна замените `OPENAI_API_BASE_URL`
+и `OPENAI_API_KEY` на своего провайдера и выполните
+`make restart && make init-webui`.
+
+`make init-webui` идемпотентен: повторный запуск не дублирует пользователя
+и пресеты, а обновляет их. Пароль владельца и API-ключ лежат в
+`${DATA_ROOT}/secrets/` (права 600) и в чат не печатаются.
 
 `bootstrap-pi.sh` идемпотентен: повторный запуск не перезаписывает `.env`
 и не ломает существующую установку. Все опасные шаги (`apt`, `systemctl`,
@@ -73,17 +85,21 @@ make vikunja-admin
 
 ## Ручные шаги после установки
 
-1. Открыть `http://<ip-pi>` и создать первого пользователя — он станет администратором.
-2. В `.env` заполнить `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`, `EMBEDDING_API_BASE_URL`,
-   `EMBEDDING_API_KEY`, `EMBEDDING_MODEL`; выполнить `make restart`.
+1. Открыть `http://<ip-pi>`, войти владельцем: логин и пароль —
+   `${DATA_ROOT}/secrets/webui-owner.txt`. Сменить пароль в Settings → Account.
+2. Провайдер LLM уже настроен из `.env` (`make init-webui`). Для продакшна
+   заменить `OPENAI_API_BASE_URL`/`OPENAI_API_KEY` и выполнить
+   `make restart && make init-webui`.
 3. Admin Panel → Settings → убедиться, что регистрация закрыта (`ENABLE_SIGNUP=false`).
 4. Создать остальных пользователей вручную (Admin Panel → Users).
+   У каждого свои чаты, память и файлы — данные не пересекаются.
 5. Задачи: `make vikunja-admin`, войти на `http://<ip-pi>:8081`, сменить пароль
    и удалить файл `/srv/omnisecretary/secrets/vikunja-admin.txt`.
-6. Пресеты: создать API-ключ (Settings → Account → API Keys) и выполнить
-   `WEBUI_API_KEY=... make presets ARGS="--base-model <id модели>"`.
-7. Проверить `make smoke`.
-8. Настроить бэкапы в cron (см. ниже).
+6. Пресеты уже импортированы (`make init-webui`). Повторный импорт:
+   `WEBUI_API_KEY=$(cat ${DATA_ROOT}/secrets/webui-api-key.txt | cut -d= -f2) make presets ARGS="--base-model openai-fast"`.
+7. Тема Gruvbox подключена автоматически; в Settings → Interface выберите Dark.
+8. Проверить `make smoke`.
+9. Настроить бэкапы в cron (см. ниже).
 
 ## Порты
 
@@ -129,8 +145,18 @@ make presets ARGS="--base-model <id>"  # импорт пресетов (нуже
 Хранится 14 последних бэкапов (меняется `--keep N`). Бэкапы лежат вне git
 в `${DATA_ROOT}/backups`. Секреты в бэкап не попадают.
 
-## Оптимизация под 4 ГБ ОЗУ
+## Тема Gruvbox
 
+Интерфейс оформлен в Gruvbox: `theme/gruvbox.css` монтируется как
+`/static/custom.css` (Open WebUI подключает его раньше основного бандла).
+Палитра переопределяет CSS-переменные Tailwind (`--color-gray-*`,
+`--color-blue-*` и т.д.), поэтому тема работает и в светлом, и в тёмном
+режиме. Рекомендуется Settings → Interface → Theme → Dark.
+
+Файл темы версионируется: правки — через git, применяются перезапуском
+контейнера (`make restart`), сборка не нужна.
+
+## Оптимизация под 4 ГБ ОЗУ
 - Локальные LLM на Pi не запускаются (`ENABLE_OLLAMA_API=false`).
 - Эмбеддинги — только облачные (`RAG_EMBEDDING_ENGINE=openai`).
 - Векторы Qdrant хранятся на диске (`QDRANT_ON_DISK=true`).

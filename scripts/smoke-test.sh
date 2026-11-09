@@ -130,6 +130,29 @@ else
     fail "postgres: база vikunja пуста (запустите: make up)"
 fi
 
+# ── 4b. Модели и пресеты (если есть API-ключ владельца) ──────
+API_KEY_FILE="$DATA_ROOT/secrets/webui-api-key.txt"
+if [[ -f "$API_KEY_FILE" ]]; then
+    if [[ "$QUIET" == "0" ]]; then
+        printf '\n%sМодели%s\n' "$C_BOLD" "$C_RESET"
+    fi
+    api_key="$(grep -m1 '^WEBUI_API_KEY=' "$API_KEY_FILE" | cut -d= -f2-)"
+    models_json="$(curl -fsS -m 30 -H "Authorization: Bearer $api_key" \
+        http://127.0.0.1/api/models 2>/dev/null || true)"
+    if printf '%s' "$models_json" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+ids = {m.get("id") for m in data.get("data", [])}
+required = {"openai-fast", "secretary", "omni", "archivist", "coder", "private"}
+missing = required - ids
+sys.exit(1 if missing else 0)
+' 2>/dev/null; then
+        pass "модели: openai-fast и 5 пресетов на месте"
+    else
+        fail "модели: не хватает базовой модели или пресетов (make init-webui)"
+    fi
+fi
+
 # ── 5. Redis ─────────────────────────────────────────────────
 if [[ "$(compose exec -T redis redis-cli ping 2>/dev/null | tr -d '\r')" == "PONG" ]]; then
     pass "redis PING"
