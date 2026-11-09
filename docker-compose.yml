@@ -174,7 +174,9 @@ services:
   # Qdrant — векторная память
   # ─────────────────────────────────────────────────────────────
   qdrant:
-    image: qdrant/qdrant:v1.20.0
+    # v1.19.x выровнен с qdrant-client 1.18.0 внутри Open WebUI v0.13.3:
+    # разница минорных версий ≤ 1, клиент не ругается на несовместимость.
+    image: qdrant/qdrant:v1.19.2
     container_name: omni-qdrant
     restart: unless-stopped
     environment:
