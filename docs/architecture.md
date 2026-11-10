@@ -47,6 +47,7 @@ Vikunja стоит в обеих сетях: nginx проксирует её ч�
 | 6379 | Redis | только сеть `backend` |
 | 8080 | Open WebUI | только сеть `frontend` |
 | 3456 | Vikunja | только внутри Docker-сетей |
+| — | Telegram-бот | исходящий long polling, входящих портов нет |
 
 ## Тома
 

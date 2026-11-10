@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env
 
-.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui
+.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -56,3 +56,12 @@ init-webui: ## Владелец, API-ключ, провайдер LLM, прес�
 
 presets: ## Импорт пресетов: make presets ARGS="--base-model <id>"
 	./scripts/import-presets.sh $(ARGS)
+
+tg-up: ## Запустить Telegram-бота (профиль telegram)
+	$(COMPOSE) --profile telegram up -d telegram-bot
+
+tg-down: ## Остановить Telegram-бота
+	$(COMPOSE) --profile telegram stop telegram-bot
+
+tg-logs: ## Логи Telegram-бота
+	$(COMPOSE) --profile telegram logs -f --tail=100 telegram-bot

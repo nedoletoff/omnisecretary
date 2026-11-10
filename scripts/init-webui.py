@@ -198,6 +198,20 @@ def main() -> int:
     else:
         print(f"[warn] импорт пресетов: HTTP {status} {body}")
 
+    # В v0.13 модель без грантов приватна (видна только владельцу).
+    # Открываем read всем пользователям: истории всё равно раздельные,
+    # а пресеты — общий инструмент семьи.
+    public_read = [{"principal_type": "user", "principal_id": "*", "permission": "read"}]
+    for model_id, model_name in [(m["id"], m["name"]) for m in models] + (
+        [(base_model, base_model)] if base_model else []
+    ):
+        status, body = api(url, "/api/v1/models/model/access/update", token=token,
+                           payload={"id": model_id, "name": model_name,
+                                    "access_grants": public_read})
+        if status != 200:
+            print(f"[warn] доступ к модели {model_id}: HTTP {status} {body}")
+    print("[ok] доступ к моделям открыт всем пользователям (read)")
+
     return 0
 
 

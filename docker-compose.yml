@@ -325,6 +325,38 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # ── Telegram-бот: второе окно к тому же бэкенду ─────────────────────────
+  # Запускается отдельным профилем: docker compose --profile telegram up -d
+  # (make tg-up). Без TELEGRAM_BOT_TOKEN не стартует — так и задумано.
+  telegram-bot:
+    image: python:3.12-slim
+    profiles: ["telegram"]
+    container_name: omni-telegram-bot
+    command: ["python", "-u", "/app/telegram_bot.py"]
+    restart: unless-stopped
+    depends_on:
+      open-webui:
+        condition: service_healthy
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_IDS: ${TELEGRAM_ALLOWED_IDS:-}
+      TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
+      TELEGRAM_ACCOUNT_MAP: ${TELEGRAM_ACCOUNT_MAP:-}
+      TELEGRAM_DEFAULT_MODEL: ${TELEGRAM_DEFAULT_MODEL:-secretary}
+      OWUI_INTERNAL_URL: http://open-webui:8080
+      DATA_ROOT: /srv/omnisecretary
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./bot:/app:ro
+      - ${DATA_ROOT}/bot:/srv/omnisecretary/bot
+      - ${DATA_ROOT}/secrets:/srv/omnisecretary/secrets:ro
+    networks:
+      - backend
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
 networks:
   # nginx ↔ open-webui
   frontend:
