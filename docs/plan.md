@@ -103,19 +103,32 @@ Open WebUI v0.13.3 нет, а Vikunja уже отдаёт задачи по CalD
 Отклонение: отдельный SSH/Computer Use MCP не разворачивается — доступ к
 shell хоста не автоматизирован (ADR-026). Вместо него — песочница.
 
-## Этап 5 — Голос
+## Этап 5 — Голос (✅ реализовано)
 
 **Цель:** русский STT и TTS.
 
 Файлы:
-- `docker-compose.yml` — `vosk-stt` (vosk-model-small-streaming-ru), `silero-tts`.
-- `nginx/conf.d/` — маршруты `/stt`, `/tts` (или прямое подключение Open WebUI).
+- `voice/stt/` — sherpa-onnx + модель Vosk small-ru (ONNX), OpenAI-совместимый
+  `/v1/audio/transcriptions`.
+- `voice/tts/` — Silero v4_ru (torch) и `Dockerfile.piper` (Piper, альтернатива),
+  `/v1/audio/speech`.
+- `docker-compose.yml` — профили `voice` и `voice-piper`, лимиты памяти.
 - `docs/voice.md`.
+
+Реализовано:
+- STT распознаёт русскую речь (проверено на test.wav: точный текст, ~10 с на
+  7 с аудио, int8, 4 потока);
+- TTS Silero с ударениями и «ё», 6 голосов; Piper — лёгкая альтернатива;
+- порты наружу не публикуются, связь только внутри `backend`;
+- Open WebUI настроен на OpenAI-совместимые эндпоинты (`AUDIO_*`).
 
 Критерии приёмки:
 - Голосовой ввод в вебе распознаёт русскую речь.
 - Озвучка ответов работает, задержка приемлема на Pi.
-- Память: контейнеры голоса ≤ 400 МБ суммарно.
+- Память: STT ~200 МБ, TTS ~400 МБ; включаются профилем.
+
+Отклонение: `vosk` python заменён на sherpa-onnx с той же моделью — источник
+Kaldi-моделей (alphacephei.com) недоступен из сети Pi. См. ADR-027.
 
 ## Этап 6 — Проактивность и мобильный доступ
 

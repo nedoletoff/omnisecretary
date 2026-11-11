@@ -15,7 +15,7 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 | 2 | Календарь Open WebUI, задачи (Vikunja), пресеты-«лица» | ✅ реализовано |
 | 3 | Telegram-бот, allowlist, многопользовательский режим | ✅ реализовано (нужен токен бота) |
 | 4 | MCP: Obsidian, GitHub, Filesystem, песочница, Vikunja | ✅ реализовано |
-| 5 | Голос: Vosk STT + Silero TTS | ⏳ |
+| 5 | Голос: Vosk-модель (sherpa-onnx) + Silero TTS, Piper как альтернатива | ✅ запущено и проверено |
 | 6 | Проактивность: утренний брифинг, напоминания, PWA | ⏳ |
 
 Подробный план и критерии перехода между этапами — [docs/plan.md](docs/plan.md).
@@ -142,6 +142,9 @@ make mcp-build   # собрать образ MCP-серверов
 make mcp-init    # зарегистрировать инструменты в Open WebUI
 make mcp-logs    # логи MCP-серверов
 make tg-up       # запустить Telegram-бота
+make voice-up    # запустить STT + Silero TTS (профиль voice)
+make voice-piper # STT + Piper TTS (лёгкий вариант)
+make voice-logs  # логи голосовых сервисов
 ```
 
 ## Бэкапы
@@ -179,6 +182,8 @@ make tg-up       # запустить Telegram-бота
 - Лимиты памяти у каждого сервиса в `docker-compose.yml` (суммарно ~2,5 ГБ).
 - Docker data-root и все тома — на диске данных, не на SD.
 - Логи Docker ограничены (10 МБ × 3 на контейнер).
+- Голос — отдельные контейнеры по профилю `voice`: STT ~200 МБ, TTS ~400 МБ
+  (включаются только когда нужны).
 
 ## Документация
 
@@ -186,6 +191,7 @@ make tg-up       # запустить Telegram-бота
 - [docs/calendar-tasks.md](docs/calendar-tasks.md) — календарь, задачи, пресеты, режимы чатов.
 - [docs/obsidian.md](docs/obsidian.md) — Obsidian-вольт: подключение, инструменты, правила записи.
 - [docs/mcp.md](docs/mcp.md) — MCP-серверы, права, песочница, добавление своего.
+- [docs/voice.md](docs/voice.md) — русский STT (Vosk/sherpa-onnx) и TTS (Silero, Piper).
 - [docs/telegram.md](docs/telegram.md) — бот, allowlist, раздельные аккаунты.
 - [docs/plan.md](docs/plan.md) — этапы и критерии перехода.
 - [docs/decisions.md](docs/decisions.md) — принятые решения и допущения.

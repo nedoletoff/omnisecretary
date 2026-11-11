@@ -180,6 +180,30 @@ sys.exit(1 if missing else 0)
     fi
 fi
 
+# ── 4d. Голос (если профиль voice запущен) ──────────────────
+voice_running=0
+for name in omni-stt omni-tts omni-tts-piper; do
+    if "${DOCKER[@]}" inspect "$name" >/dev/null 2>&1; then
+        voice_running=1
+    fi
+done
+if [[ "$voice_running" == "1" ]]; then
+    if [[ "$QUIET" == "0" ]]; then
+        printf '\n%sГолос%s\n' "$C_BOLD" "$C_RESET"
+    fi
+    for name in omni-stt omni-tts omni-tts-piper; do
+        if ! "${DOCKER[@]}" inspect "$name" >/dev/null 2>&1; then
+            continue
+        fi
+        status="$("${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' "$name" 2>/dev/null || echo none)"
+        if [[ "$status" == "healthy" ]]; then
+            pass "$name: healthy"
+        else
+            fail "$name: $status"
+        fi
+    done
+fi
+
 # ── 5. Redis ─────────────────────────────────────────────────
 if [[ "$(compose exec -T redis redis-cli ping 2>/dev/null | tr -d '\r')" == "PONG" ]]; then
     pass "redis PING"

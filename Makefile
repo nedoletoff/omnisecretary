@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env
 
-.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs mcp-build mcp-init mcp-logs vault-logs
+.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs mcp-build mcp-init mcp-logs vault-logs voice-up voice-piper voice-down voice-logs
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -77,3 +77,15 @@ mcp-logs: ## Логи всех MCP-серверов
 
 vault-logs: ## Логи формы подключения вольта
 	$(COMPOSE) logs -f --tail=50 vault-manager
+
+voice-up: ## Запустить Vosk STT + Silero TTS
+	$(COMPOSE) --profile voice up -d stt tts
+
+voice-piper: ## Запустить STT + Piper TTS (лёгкий)
+	$(COMPOSE) --profile voice --profile voice-piper up -d stt tts-piper
+
+voice-down: ## Остановить голосовые сервисы
+	$(COMPOSE) --profile voice --profile voice-piper stop stt tts tts-piper
+
+voice-logs: ## Логи STT и TTS
+	$(COMPOSE) --profile voice --profile voice-piper logs -f --tail=50 stt tts tts-piper

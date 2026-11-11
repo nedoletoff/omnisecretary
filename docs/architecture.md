@@ -94,6 +94,12 @@ Telegram → bot (long polling) → API open-webui (`/api/chat/completions`
   Vikunja отдаёт задачи по CalDAV (`/dav/`) для календарей на телефоне.
 - MCP-сервер Vikunja даёт ассистенту создавать задачи на естественном языке.
 
+### Голос
+Браузер (микрофон) → open-webui → `stt:8000/v1/audio/transcriptions` →
+sherpa-onnx (модель Vosk small-ru) → текст в чат. Ответ → open-webui →
+`tts:8000/v1/audio/speech` → Silero v4_ru → WAV в браузер.
+Оба сервиса — профиль `voice`, портов не публикуют.
+
 ### Инструменты (MCP)
 LLM решает вызвать инструмент → open-webui (`/mcp`, streamable HTTP) →
 контейнер `mcp-*` → результат возвращается в контекст → ответ LLM.
@@ -128,9 +134,12 @@ LLM решает вызвать инструмент → open-webui (`/mcp`, str
 | mcp-github | 96 МБ |
 | mcp-vikunja | 64 МБ |
 | mcp-sandbox | 192 МБ |
+| stt (профиль voice) | 320 МБ |
+| tts Silero (профиль voice) | 640 МБ |
+| tts-piper (профиль voice-piper) | 192 МБ |
 | vault-manager | 96 МБ |
 | telegram-bot (профиль) | 96 МБ |
-| **Итого лимитов** | **3112 МБ** |
+| **Итого лимитов** | **3112 МБ** (без голоса) / **4072 МБ** (с Silero) |
 
 ОС + Docker ≈ 600–800 МБ. Запас ~500 МБ и swap 2 ГБ.
 Лимиты — потолок, не резервация: в простое стек занимает заметно меньше.
