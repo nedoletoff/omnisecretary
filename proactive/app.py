@@ -199,12 +199,27 @@ def _mark_sent(day: str) -> None:
     STATE_FILE.write_text(day)
 
 
+CATCHUP_MINUTES = int(os.environ.get("BRIEFING_CATCHUP_MINUTES", "180"))
+
+
+def _due(now: datetime) -> bool:
+    """Пора ли отправлять: время наступило и окно догона не истекло.
+
+    Догон нужен, если Pi был выключен в 07:30: при старте в 08:10 брифинг
+    уйдёт, а в 20:00 — уже нет (не «доброе утро» среди ночи).
+    """
+    hour, minute = (int(part) for part in BRIEFING_TIME.split(":"))
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    delay = (now - target).total_seconds() / 60
+    return 0 <= delay <= CATCHUP_MINUTES
+
+
 def scheduler_loop() -> None:
     """Каждые 30 с проверяем, не пора ли отправить брифинг."""
     while True:
         try:
             now = datetime.now(TZ)
-            if now.strftime("%H:%M") == BRIEFING_TIME and not _already_sent(now.date().isoformat()):
+            if _due(now) and not _already_sent(now.date().isoformat()):
                 if send_telegram(build_briefing()):
                     _mark_sent(now.date().isoformat())
         except Exception:  # noqa: BLE001 — цикл не должен умирать
@@ -222,6 +237,7 @@ def healthz() -> JSONResponse:
     return JSONResponse({
         "status": "ok",
         "briefing_time": BRIEFING_TIME,
+        "catchup_minutes": CATCHUP_MINUTES,
         "timezone": str(TZ),
         "telegram": bool(TELEGRAM_TOKEN and TELEGRAM_CHAT),
         "last_error": _last_error,

@@ -22,12 +22,13 @@ import os
 import re
 import sqlite3
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # ── Конфигурация ────────────────────────────────────────────────────────────
@@ -65,6 +66,9 @@ HELP_TEXT = """Я — OmniSecretary. Пишите текстом, я отвеч�
 /model <пресет> — сменить пресет для новых чатов
 /private — приватный режим: ничего не сохраняется
 /public — вернуться к обычному режиму
+/remind 20:30 позвонить маме — напоминание (20:30, +15m, 12.11 09:00)
+/reminders — ближайшие напоминания
+/forget <id> — удалить напоминание
 /help — эта справка"""
 
 
@@ -203,6 +207,14 @@ def db() -> sqlite3.Connection:
             model TEXT NOT NULL,
             private INTEGER NOT NULL DEFAULT 0,
             private_messages TEXT NOT NULL DEFAULT '[]'
+        );
+        CREATE TABLE IF NOT EXISTS reminders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tg_id INTEGER NOT NULL,
+            chat_id INTEGER NOT NULL,
+            text TEXT NOT NULL,
+            due_at TEXT NOT NULL,
+            sent INTEGER NOT NULL DEFAULT 0
         );
         """
     )
@@ -383,6 +395,59 @@ def friendly_error(exc: Exception) -> str:
 # ── Обработчики ─────────────────────────────────────────────────────────────
 
 
+def parse_when(value: str) -> datetime | None:
+    """Разобрать время напоминания. Возвращает UTC или None.
+
+    Форматы: +15m, +2h, 20:30, 12.11 09:00, 2026-11-12 09:00.
+    Время без даты — ближайшее будущее (сегодня или завтра).
+    """
+    value = value.strip().lower()
+    now = datetime.now().astimezone()
+    match = re.fullmatch(r"\+(\d+)([mh])", value)
+    if match:
+        delta = timedelta(minutes=int(match.group(1))) if match.group(2) == "m" \
+            else timedelta(hours=int(match.group(1)))
+        return (now + delta).astimezone(timezone.utc)
+
+    for fmt in ("%H:%M", "%d.%m %H:%M", "%Y-%m-%d %H:%M"):
+        try:
+            moment = datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+        if fmt == "%H:%M":
+            moment = now.replace(hour=moment.hour, minute=moment.minute,
+                                 second=0, microsecond=0)
+            if moment <= now:
+                moment += timedelta(days=1)
+        else:
+            # Год по умолчанию 1900 даёт LMT-смещение при astimezone().
+            moment = moment.replace(year=now.year, tzinfo=now.tzinfo)
+            if moment <= now:
+                moment = moment.replace(year=now.year + 1)
+        return moment.astimezone(timezone.utc)
+    return None
+
+
+def reminder_loop() -> None:
+    """Раз в 20 секунд отправляем наступившие напоминания."""
+    while True:
+        try:
+            conn = db()
+            due = conn.execute(
+                "SELECT id, chat_id, text FROM reminders "
+                "WHERE sent = 0 AND due_at <= ? ORDER BY due_at",
+                (datetime.now(timezone.utc).isoformat(timespec="seconds"),),
+            ).fetchall()
+            for row in due:
+                send(row["chat_id"], f"⏰ Напоминание: {row['text']}")
+                conn.execute("UPDATE reminders SET sent = 1 WHERE id = ?", (row["id"],))
+            conn.commit()
+            conn.close()
+        except Exception:  # noqa: BLE001 — поток не должен умирать
+            log.exception("напоминания")
+        time.sleep(20)
+
+
 def handle_command(tg_id: int, chat_id: int, text: str) -> bool:
     command, _, argument = text.partition(" ")
     command = command.split("@")[0].lower()
@@ -420,6 +485,53 @@ def handle_command(tg_id: int, chat_id: int, text: str) -> bool:
             return True
         set_state(tg_id, chat_id=chat, model=model, private=0, private_messages="[]")
         send(chat_id, f"Новый чат с пресетом {model}. Спрашивайте.")
+        return True
+
+    if command == "/remind":
+        when, _, what = argument.partition(" ")
+        moment = parse_when(when) if when else None
+        if not moment or not what.strip():
+            send(chat_id, "Формат: /remind 20:30 текст\n"
+                          "Ещё: +15m, +2h, 12.11 09:00, 2026-11-12 09:00")
+            return True
+        conn = db()
+        cursor = conn.execute(
+            "INSERT INTO reminders (tg_id, chat_id, text, due_at) VALUES (?, ?, ?, ?)",
+            (tg_id, chat_id, what.strip(), moment.isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        conn.close()
+        local = moment.astimezone()
+        send(chat_id, f"Напоминание #{cursor.lastrowid} на {local:%d.%m %H:%M}: {what.strip()}")
+        return True
+
+    if command == "/reminders":
+        conn = db()
+        rows = conn.execute(
+            "SELECT id, text, due_at FROM reminders WHERE tg_id = ? AND sent = 0 "
+            "ORDER BY due_at LIMIT 10", (tg_id,),
+        ).fetchall()
+        conn.close()
+        if not rows:
+            send(chat_id, "Активных напоминаний нет.")
+            return True
+        lines = []
+        for row in rows:
+            local = datetime.fromisoformat(row["due_at"]).astimezone()
+            lines.append(f"#{row['id']} {local:%d.%m %H:%M} — {row['text']}")
+        send(chat_id, "\n".join(lines))
+        return True
+
+    if command == "/forget":
+        if not argument.isdigit():
+            send(chat_id, "Укажите номер: /forget 3")
+            return True
+        conn = db()
+        cursor = conn.execute(
+            "DELETE FROM reminders WHERE id = ? AND tg_id = ?", (int(argument), tg_id))
+        conn.commit()
+        conn.close()
+        send(chat_id, "Удалено." if cursor.rowcount else "Такого напоминания нет.")
         return True
 
     if command == "/private":
@@ -465,6 +577,7 @@ def handle_text(tg_id: int, chat_id: int, text: str) -> None:
 
 
 def poll_forever() -> None:
+    threading.Thread(target=reminder_loop, daemon=True).start()
     if not TELEGRAM_TOKEN:
         log.error("TELEGRAM_BOT_TOKEN не задан — бот не может работать")
         sys.exit(1)

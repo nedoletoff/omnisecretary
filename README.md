@@ -148,6 +148,7 @@ make voice-logs  # логи голосовых сервисов
 make proactive-up    # утренний брифинг в Telegram
 make briefing        # собрать брифинг сейчас
 make briefing-send   # отправить брифинг в Telegram
+./scripts/health-alert.sh  # smoke + алерт в Telegram при ошибке
 ```
 
 ## Бэкапы
@@ -196,6 +197,7 @@ make briefing-send   # отправить брифинг в Telegram
 - [docs/mcp.md](docs/mcp.md) — MCP-серверы, права, песочница, добавление своего.
 - [docs/voice.md](docs/voice.md) — русский STT (Vosk/sherpa-onnx) и TTS (Silero, Piper).
 - [docs/proactive.md](docs/proactive.md) — утренний брифинг, PWA, ограничения.
+- [docs/operations.md](docs/operations.md) — эксплуатация, бэкапы, переезд на диск, мониторинг.
 - [docs/telegram.md](docs/telegram.md) — бот, allowlist, раздельные аккаунты.
 - [docs/plan.md](docs/plan.md) — этапы и критерии перехода.
 - [docs/decisions.md](docs/decisions.md) — принятые решения и допущения.
