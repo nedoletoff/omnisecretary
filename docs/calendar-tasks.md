@@ -2,6 +2,21 @@
 
 Этап 2: календарь, список задач и «лица» ассистента.
 
+## API календаря: наносекунды
+
+`POST /api/v1/calendars/events/create` ждёт `start_at`/`end_at` в
+**наносекундах** (`epoch * 1e9`). Значения в миллисекундах создаются без
+ошибки, но не попадают в `GET /events` — диапазон сравнивается с ns.
+
+```bash
+START=$(date -d 'tomorrow 15:00' +%s)000000000
+curl -H "Authorization: Bearer $WEBUI_API_KEY" -H 'Content-Type: application/json' \
+  -d "{\"calendar_id\":\"<id>\",\"title\":\"Встреча\",\"start_at\":$START}" \
+  http://<pi>/api/v1/calendars/events/create
+```
+
+Брифинг (`proactive`) читает `start_at` и делит на 1e9 — см. `proactive/app.py`.
+
 ## Календарь
 
 Используется **встроенный календарь Open WebUI** (`ENABLE_CALENDAR=true`

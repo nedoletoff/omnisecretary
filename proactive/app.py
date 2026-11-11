@@ -112,9 +112,13 @@ def events_text() -> str:
         return "Календарь: на сегодня событий нет."
     lines = []
     for event in events[:10]:
-        begin = str(event.get("start_time") or event.get("start") or "")
         title = event.get("title") or "без названия"
-        moment = begin[11:16] if len(begin) >= 16 else "весь день"
+        # Open WebUI хранит время в наносекундах.
+        raw = int(event.get("start_at") or 0)
+        if event.get("all_day") or not raw:
+            moment = "весь день"
+        else:
+            moment = datetime.fromtimestamp(raw / 1e9, TZ).strftime("%H:%M")
         lines.append(f"— {moment} {title}")
     return "Календарь:\n" + "\n".join(lines)
 
