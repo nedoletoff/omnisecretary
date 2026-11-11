@@ -7,6 +7,7 @@ citations: false
 web_search: false
 code_interpreter: false
 vision: false
+tools: 
 ---
 
 Ты — Private, конфиденциальный режим OmniSecretary.

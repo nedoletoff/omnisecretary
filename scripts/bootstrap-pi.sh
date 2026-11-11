@@ -193,6 +193,10 @@ create_directories() {
         "$DATA_ROOT"/volumes/vikunja \
         "$DATA_ROOT"/backups \
         "$DATA_ROOT"/vault \
+        "$DATA_ROOT"/vault-index \
+        "$DATA_ROOT"/shared \
+        "$DATA_ROOT"/sandbox \
+        "$DATA_ROOT"/bot \
         "$DATA_ROOT"/secrets \
         "$DATA_ROOT"/logs
 
@@ -200,7 +204,9 @@ create_directories() {
     run sudo chown -R 999:999 "$DATA_ROOT"/volumes/postgres "$DATA_ROOT"/volumes/redis
     run sudo chown -R 1000:1000 "$DATA_ROOT"/volumes/qdrant "$DATA_ROOT"/volumes/qdrant-snapshots "$DATA_ROOT"/volumes/openwebui "$DATA_ROOT"/volumes/vikunja
     # Остальное — текущему пользователю (бэкапы, вольт, логи).
-    run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/backups "$DATA_ROOT"/vault "$DATA_ROOT"/secrets "$DATA_ROOT"/logs
+    run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/backups "$DATA_ROOT"/vault \
+        "$DATA_ROOT"/vault-index "$DATA_ROOT"/shared "$DATA_ROOT"/sandbox \
+        "$DATA_ROOT"/bot "$DATA_ROOT"/secrets "$DATA_ROOT"/logs
 
     run mkdir -p "$ROOT_DIR/nginx/certs" "$ROOT_DIR/nginx/www"
     log_ok "Каталоги готовы"
@@ -223,6 +229,10 @@ setup_env() {
                 ip_existing="$(hostname -I 2>/dev/null | awk '{print $1}')"
                 [[ -n "$ip_existing" ]] || ip_existing="127.0.0.1"
                 env_set VIKUNJA_PUBLIC_URL "http://${ip_existing}:8081/"
+            fi
+            if ! grep -q '^VAULT_ADMIN_PASSWORD=..*' "$ENV_FILE"; then
+                env_set VAULT_ADMIN_PASSWORD "$(gen_hex 16)"
+                log_info "Добавлен VAULT_ADMIN_PASSWORD в .env"
             fi
         fi
         return 0
@@ -248,6 +258,7 @@ setup_env() {
     env_set QDRANT_API_KEY "$(gen_hex 24)"
     env_set VIKUNJA_SECRET "$(gen_hex 32)"
     env_set VIKUNJA_PUBLIC_URL "http://${ip}:8081/"
+    env_set VAULT_ADMIN_PASSWORD "$(gen_hex 16)"
 
     local host_tz="UTC"
     [[ -f /etc/timezone ]] && host_tz="$(cat /etc/timezone)"

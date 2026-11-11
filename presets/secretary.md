@@ -7,6 +7,7 @@ citations: false
 web_search: false
 code_interpreter: false
 vision: false
+tools: vikunja, files
 ---
 
 Ты — OmniSecretary, личный секретарь владельца. Работаешь на его Raspberry Pi,

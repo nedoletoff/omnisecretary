@@ -153,6 +153,33 @@ sys.exit(1 if missing else 0)
     fi
 fi
 
+# ── 4c. MCP-инструменты и вольт ─────────────────────────────
+if [[ "$QUIET" == "0" ]]; then
+    printf '\n%sMCP и вольт%s\n' "$C_BOLD" "$C_RESET"
+fi
+check_http "vault-manager /healthz" "http://127.0.0.1/vault/healthz" "200"
+check_http "vault-manager /vault/ (без авторизации)" "http://127.0.0.1/vault/" "401"
+
+if [[ -f "$API_KEY_FILE" ]]; then
+    api_key="$(grep -m1 '^WEBUI_API_KEY=' "$API_KEY_FILE" | cut -d= -f2-)"
+    tools_json="$(curl -fsS -m 30 -H "Authorization: Bearer $api_key" \
+        http://127.0.0.1/api/v1/tools/ 2>/dev/null || true)"
+    if printf '%s' "$tools_json" | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+ids = {t.get("id") for t in data} if isinstance(data, list) else set()
+required = {f"server:mcp:{n}" for n in ("vault", "files", "github", "vikunja", "sandbox")}
+missing = required - ids
+if missing:
+    print("нет: " + ", ".join(sorted(missing)))
+sys.exit(1 if missing else 0)
+' 2>/dev/null; then
+        pass "MCP: 5 серверов зарегистрированы"
+    else
+        fail "MCP: серверы не зарегистрированы (make mcp-init)"
+    fi
+fi
+
 # ── 5. Redis ─────────────────────────────────────────────────
 if [[ "$(compose exec -T redis redis-cli ping 2>/dev/null | tr -d '\r')" == "PONG" ]]; then
     pass "redis PING"

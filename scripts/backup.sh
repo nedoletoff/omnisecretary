@@ -71,6 +71,22 @@ fi
 
 # ── 3. Obsidian-вольт ────────────────────────────────────────
 VAULT_PATH="${VAULT_PATH:-${DATA_ROOT}/vault}"
+# Токен из secrets — чтобы push работал без интерактивного ввода.
+GIT_PUSH_ENV=()
+VAULT_TOKEN_FILE="${DATA_ROOT}/secrets/vault-git-token"
+if [[ -r "$VAULT_TOKEN_FILE" ]]; then
+    VAULT_TOKEN="$(cat "$VAULT_TOKEN_FILE")"
+    if [[ -n "$VAULT_TOKEN" ]]; then
+        BASIC="$(printf 'x-access-token:%s' "$VAULT_TOKEN" | base64 -w0)"
+        GIT_PUSH_ENV=(
+            "GIT_CONFIG_COUNT=1"
+            "GIT_CONFIG_KEY_0=http.extraheader"
+            "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $BASIC"
+        )
+    fi
+fi
+unset VAULT_TOKEN BASIC
+
 if [[ -d "$VAULT_PATH/.git" ]]; then
     log_info "Синхронизация Obsidian-вольта…"
     if [[ -n "$(git -C "$VAULT_PATH" status --porcelain)" ]]; then
@@ -78,7 +94,8 @@ if [[ -d "$VAULT_PATH/.git" ]]; then
         git -C "$VAULT_PATH" commit -m "chore: автосохранение вольта $(date +%F)" >/dev/null
     fi
     if git -C "$VAULT_PATH" remote get-url origin >/dev/null 2>&1; then
-        git -C "$VAULT_PATH" push --quiet 2>/dev/null \
+        env "${GIT_PUSH_ENV[@]}" GIT_TERMINAL_PROMPT=0 \
+            git -C "$VAULT_PATH" push --quiet 2>/dev/null \
             && log_ok "Вольт отправлен в origin" \
             || log_warn "Не удалось отправить вольт (нет сети/доступа). Локальный коммит сохранён."
     else

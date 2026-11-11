@@ -1,0 +1,7 @@
+mcp==1.20.0
+# pydantic 2.12 убрал eval_type_backport, который ещё нужен mcp 1.20.
+pydantic==2.11.9
+httpx==0.28.1
+fastapi==0.121.0
+uvicorn==0.38.0
+python-multipart==0.0.20

@@ -4,13 +4,13 @@
 возможности. Пресет создаётся как «модель» в Workspace → Models и
 наследует базовую LLM.
 
-| Файл | Пресет | Назначение |
-|---|---|---|
-| `secretary.md` | Secretary | календарь, задачи, заметки, напоминания |
-| `omni.md` | Omni | универсальный ассистент со всеми инструментами |
-| `archivist.md` | Archivist | Obsidian-вольт: поиск и запись, экономия контекста |
-| `coder.md` | Coder | код, git, GitHub, файлы, shell |
-| `private.md` | Private | без памяти, истории и инструментов |
+| Файл | Пресет | Назначение | Инструменты (MCP) |
+|---|---|---|---|
+| `secretary.md` | Secretary | календарь, задачи, заметки, напоминания | Vikunja, Files |
+| `omni.md` | Omni | универсальный ассистент | Vikunja, Files, Obsidian |
+| `archivist.md` | Archivist | Obsidian-вольт: поиск и запись | Obsidian |
+| `coder.md` | Coder | код, git, GitHub, песочница | GitHub, Sandbox, Files |
+| `private.md` | Private | без памяти, истории и инструментов | — |
 
 ## Формат файла
 
@@ -24,6 +24,7 @@ citations: false         # capabilities
 web_search: false
 code_interpreter: false
 vision: false
+tools: vikunja, files     # имена MCP-серверов → server:mcp:<имя>
 ---
 
 <системный промпт>
@@ -46,6 +47,9 @@ WEBUI_API_KEY=sk-... make presets ARGS="--base-model deepseek-chat"
 импортировать вручную: Workspace → Models → Import.
 
 Повторный импорт обновляет пресеты по `id`, дубликаты не создаются.
+Список `tools` превращается в `meta.toolIds`; повторный импорт не теряет
+привязку инструментов. После добавления нового MCP-сервера:
+`make mcp-init` (он проставит инструменты по матрице из `scripts/init-mcp.py`).
 
 ## Режимы чатов
 

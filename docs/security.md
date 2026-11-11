@@ -25,8 +25,10 @@
 | `VIKUNJA_ADMIN_PASSWORD` | пароль первого пользователя Vikunja (необязательно) | `openssl rand -hex 16` |
 | `OPENAI_API_KEY` | облачная LLM | из личного кабинета провайдера |
 | `EMBEDDING_API_KEY` | эмбеддинги | из личного кабинета провайдера |
-| `TELEGRAM_BOT_TOKEN` | бот (этап 3) | @BotFather |
-| `GITHUB_PAT` | GitHub MCP (этап 4) | GitHub → Developer settings |
+| `TELEGRAM_BOT_TOKEN` | бот | @BotFather |
+| `GITHUB_TOKEN` | GitHub MCP | GitHub → Developer settings → Fine-grained tokens |
+| `VIKUNJA_API_TOKEN` | задачи из чата | `make vikunja-admin` (или Настройки → API-токены) |
+| `VAULT_ADMIN_PASSWORD` | форма `/vault/` | `openssl rand -hex 16` (bootstrap) |
 
 Правила:
 - Пароль Postgres — hex: попадает в `DATABASE_URL`, спецсимволы ломают URL.
@@ -38,6 +40,11 @@
   сменить пароль пользователя в Open WebUI.
 - `docker inspect` показывает env контейнера — доступ к Docker API равен
   доступу к секретам. Не давать группу `docker` недоверенным пользователям.
+- Токен Obsidian-вольта — `${DATA_ROOT}/secrets/vault-git-token` (600),
+  каталог монтируется только в `vault-manager` и `mcp-vault` (read-only).
+  В `.git/config` и в URL репозитория токен не хранится.
+- Токен Vikunja — `${DATA_ROOT}/secrets/vikunja-api-token.txt` (600) и `.env`.
+- `secrets/` не попадает в git и в бэкапы; восстанавливается вручную.
 
 ## Сетевая экспозиция
 
@@ -70,7 +77,22 @@ LAN ─────────────────────────�
 - Токен бота — только в `.env`; при утечке — `/revoke` у @BotFather.
 - Групповые чаты не поддерживаются (только личные).
 
-## GitHub PAT (этап 4)
+## MCP-инструменты
+
+- MCP-серверы — отдельные контейнеры в сети `backend`, порты не публикуются.
+- Tool servers зарегистрированы **без `access_grants`** → видны только
+  администратору. Обычные пользователи инструментов не получают.
+- Пресеты получают только нужные серверы (`meta.toolIds`): Private — ничего,
+  Secretary — задачи и файлы, Coder — GitHub и песочница.
+- `mcp-sandbox` не имеет docker.sock, host-сети и `privileged`; работает
+  только в `${DATA_ROOT}/sandbox`; команды `sudo/apt/systemctl/rm/dd/mount`
+  запрещены, метасимволы оболочки (`; | & > <`) отклоняются.
+- Опасные операции на самом хосте (`sudo`, `apt`, `systemctl`, `/etc/fstab`,
+  форматирование дисков) **не автоматизированы** — только вручную владельцем.
+- Вольт: запись только в `AI/`, каждая запись — коммит; чужие папки
+  недоступны для записи (проверка на сервере, не только в промпте).
+
+## GitHub PAT
 
 - Только **fine-grained** PAT, не classic.
 - Область: выбранные репозитории (не «All repositories»).
@@ -93,8 +115,10 @@ git push, удаление) обязаны требовать подтвержд
 | `git push` в чужие репозитории | подтверждение |
 | SSH на другие хосты | allowlist хостов + подтверждение |
 
-Технически: MCP-сервер SSH работает в контейнере с непривилегированным
-пользователем, без доступа к docker.sock и без ключей кроме выделенного.
+Технически: SSH-MCP в этой версии не разворачивается. Вместо него —
+`mcp-sandbox` (изолированный контейнер, allowlist команд) и ручные
+операции владельца на хосте. Полноценный SSH/Computer Use — отдельный этап
+с выделенным ключом, allowlist хостов и подтверждением в интерфейсе.
 
 ## Контейнеры
 

@@ -13,8 +13,8 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 |---|---|---|
 | 1 | Ядро: Open WebUI + PostgreSQL + Qdrant + Redis + Nginx, скрипты | ✅ реализовано |
 | 2 | Календарь Open WebUI, задачи (Vikunja), пресеты-«лица» | ✅ реализовано |
-| 3 | Telegram-бот, allowlist, многопользовательский режим | ⏳ следующий |
-| 4 | MCP: Obsidian, GitHub, Filesystem, SSH, CalDAV, Vikunja | ⏳ |
+| 3 | Telegram-бот, allowlist, многопользовательский режим | ✅ реализовано (нужен токен бота) |
+| 4 | MCP: Obsidian, GitHub, Filesystem, песочница, Vikunja | ✅ реализовано |
 | 5 | Голос: Vosk STT + Silero TTS | ⏳ |
 | 6 | Проактивность: утренний брифинг, напоминания, PWA | ⏳ |
 
@@ -65,8 +65,11 @@ make restart && make smoke
 # 4. Владелец, API-ключ, провайдер LLM и пресеты — одной командой
 make init-webui
 
-# 5. Создать пользователя Vikunja (задачи)
+# 5. Создать пользователя Vikunja (задачи) и API-токен для MCP
 make vikunja-admin
+
+# 6. Собрать MCP-серверы и зарегистрировать инструменты
+make mcp-build && make mcp-init
 ```
 
 По умолчанию в `.env.example` уже прописана **бесплатная тестовая модель**
@@ -97,9 +100,15 @@ make vikunja-admin
    и удалить файл `/srv/omnisecretary/secrets/vikunja-admin.txt`.
 6. Пресеты уже импортированы (`make init-webui`). Повторный импорт:
    `WEBUI_API_KEY=$(cat ${DATA_ROOT}/secrets/webui-api-key.txt | cut -d= -f2) make presets ARGS="--base-model openai-fast"`.
-7. Тема Gruvbox подключена автоматически; в Settings → Interface выберите Dark.
-8. Проверить `make smoke`.
-9. Настроить бэкапы в cron (см. ниже).
+7. **Obsidian-вольт**: открыть `http://<ip-pi>/vault/` (логин `owner`,
+   пароль — `VAULT_ADMIN_PASSWORD` из `.env`), ввести URL приватного
+   репозитория, ветку и PAT (`Contents: read/write`). Подробно —
+   [docs/obsidian.md](docs/obsidian.md).
+8. **GitHub**: вписать fine-grained PAT в `GITHUB_TOKEN` (`.env`), затем
+   `make restart`. Права — [docs/mcp.md](docs/mcp.md).
+9. Тема Gruvbox подключена автоматически; в Settings → Interface выберите Dark.
+10. Проверить `make smoke`.
+11. Настроить бэкапы в cron (см. ниже).
 
 ## Порты
 
@@ -113,6 +122,8 @@ make vikunja-admin
 | 6379 | Redis | только внутри `backend` |
 | 8080 | Open WebUI | только внутри `frontend` |
 | 3456 | Vikunja | только внутри Docker-сетей |
+| — | MCP-серверы | только внутри `backend`, портов нет |
+| — | vault-manager | через nginx `/vault/`, Basic Auth, LAN |
 
 ## Команды
 
@@ -127,6 +138,10 @@ make update     # обновление по фиксированным тега�
 make reload     # перечитать конфиг nginx
 make vikunja-admin  # создать администратора задач
 make presets ARGS="--base-model <id>"  # импорт пресетов (нужен WEBUI_API_KEY)
+make mcp-build   # собрать образ MCP-серверов
+make mcp-init    # зарегистрировать инструменты в Open WebUI
+make mcp-logs    # логи MCP-серверов
+make tg-up       # запустить Telegram-бота
 ```
 
 ## Бэкапы
@@ -169,7 +184,9 @@ make presets ARGS="--base-model <id>"  # импорт пресетов (нуже
 
 - [docs/architecture.md](docs/architecture.md) — сервисы, сети, тома, потоки данных.
 - [docs/calendar-tasks.md](docs/calendar-tasks.md) — календарь, задачи, пресеты, режимы чатов.
-- [docs/obsidian.md](docs/obsidian.md) — требования к Obsidian-вольту.
+- [docs/obsidian.md](docs/obsidian.md) — Obsidian-вольт: подключение, инструменты, правила записи.
+- [docs/mcp.md](docs/mcp.md) — MCP-серверы, права, песочница, добавление своего.
+- [docs/telegram.md](docs/telegram.md) — бот, allowlist, раздельные аккаунты.
 - [docs/plan.md](docs/plan.md) — этапы и критерии перехода.
 - [docs/decisions.md](docs/decisions.md) — принятые решения и допущения.
 - [docs/security.md](docs/security.md) — секреты, доступ, подтверждения.

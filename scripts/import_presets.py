@@ -92,6 +92,15 @@ def parse_preset(path: Path) -> dict:
     if "temperature" in meta:
         params["temperature"] = meta["temperature"]
 
+    # tools: vikunja, files → meta.toolIds = ["server:mcp:vikunja", ...]
+    # Пустое значение означает «без инструментов» (приватный режим).
+    tools_raw = str(meta.get("tools", "") or "").strip()
+    tool_ids = [
+        f"server:mcp:{name.strip()}"
+        for name in tools_raw.split(",")
+        if name.strip()
+    ]
+
     return {
         "id": meta["id"],
         "name": meta["name"],
@@ -99,6 +108,7 @@ def parse_preset(path: Path) -> dict:
             "description": meta.get("description", ""),
             "system": body,
             "capabilities": capabilities,
+            "toolIds": tool_ids,
         },
         "params": params,
         "_file": path.name,

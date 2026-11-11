@@ -106,6 +106,8 @@ services:
       DEFAULT_USER_ROLE: "user"
       # API-ключи нужны скриптам (импорт пресетов, бэкапы).
       ENABLE_API_KEYS: ${ENABLE_API_KEYS:-true}
+      # MCP-инструменты как внешние сервисы (mcp-* в этом же compose).
+      ENABLE_TOOL_SERVERS: "true"
       # Права пользователей по умолчанию: без шаринга чатов/заметок.
       USER_PERMISSIONS_FEATURES_API_KEYS: "true"
       USER_PERMISSIONS_CHAT_SHARE: "false"
@@ -352,6 +354,164 @@ services:
       - ${DATA_ROOT}/secrets:/srv/omnisecretary/secrets:ro
     networks:
       - backend
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ── MCP-серверы: инструменты как отдельные контейнеры ───────────────────
+  # Доступ: tool server без access_grants = только администратор (владелец).
+  # Сеть backend — снаружи недоступны, порты не публикуются.
+  mcp-vault:
+    build: ./mcp
+    image: omnisecretary-mcp:local
+    container_name: omni-mcp-vault
+    command: ["python", "/app/servers/vault.py"]
+    restart: unless-stopped
+    environment:
+      VAULT_DIR: /vault
+      VAULT_INDEX_PATH: /index/vault.db
+      VAULT_WRITE_PREFIX: ${VAULT_WRITE_PREFIX:-AI}
+      VAULT_TOKEN_FILE: /secrets/vault-git-token
+      MCP_PORT: "8000"
+    volumes:
+      - ./mcp/servers:/app/servers:ro
+      - ${DATA_ROOT}/vault:/vault
+      - ${DATA_ROOT}/vault-index:/index
+      - ${DATA_ROOT}/secrets:/secrets:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  mcp-files:
+    image: omnisecretary-mcp:local
+    container_name: omni-mcp-files
+    command: ["python", "/app/servers/files.py"]
+    restart: unless-stopped
+    environment:
+      SHARED_DIR: /shared
+      MCP_PORT: "8000"
+    volumes:
+      - ./mcp/servers:/app/servers:ro
+      - ${DATA_ROOT}/shared:/shared
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  mcp-github:
+    image: omnisecretary-mcp:local
+    container_name: omni-mcp-github
+    command: ["python", "/app/servers/github.py"]
+    restart: unless-stopped
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      MCP_PORT: "8000"
+    volumes:
+      - ./mcp/servers:/app/servers:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  mcp-vikunja:
+    image: omnisecretary-mcp:local
+    container_name: omni-mcp-vikunja
+    command: ["python", "/app/servers/vikunja.py"]
+    restart: unless-stopped
+    depends_on:
+      vikunja:
+        condition: service_started
+    environment:
+      VIKUNJA_URL: http://vikunja:3456
+      VIKUNJA_API_TOKEN: ${VIKUNJA_API_TOKEN:-}
+      MCP_PORT: "8000"
+    volumes:
+      - ./mcp/servers:/app/servers:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 64m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # Песочница: код и прототипы. Без Docker-сокета и без доступа к хосту.
+  mcp-sandbox:
+    image: omnisecretary-mcp:local
+    container_name: omni-mcp-sandbox
+    command: ["python", "/app/servers/shell.py"]
+    restart: unless-stopped
+    environment:
+      SANDBOX_DIR: /workspace
+      SANDBOX_TIMEOUT: "60"
+      MCP_PORT: "8000"
+    volumes:
+      - ./mcp/servers:/app/servers:ro
+      - ${DATA_ROOT}/sandbox:/workspace
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    mem_limit: 192m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # Веб-форма подключения вольта. Только LAN, Basic Auth.
+  vault-manager:
+    image: omnisecretary-mcp:local
+    container_name: omni-vault-manager
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000",
+              "--app-dir", "/app/vault_manager"]
+    restart: unless-stopped
+    environment:
+      VAULT_DIR: /vault
+      SECRETS_DIR: /secrets
+      VAULT_BRANCH: ${VAULT_BRANCH:-main}
+      VAULT_ADMIN_USER: ${VAULT_ADMIN_USER:-owner}
+      VAULT_ADMIN_PASSWORD: ${VAULT_ADMIN_PASSWORD:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./mcp:/app:ro
+      - ${DATA_ROOT}/vault:/vault
+      - ${DATA_ROOT}/secrets:/secrets
+    networks: [frontend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     mem_limit: 96m
     security_opt:
       - no-new-privileges:true

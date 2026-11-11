@@ -29,7 +29,7 @@
 | Сеть | Кто в ней | Наружу |
 |---|---|---|
 | `frontend` | nginx, open-webui, vikunja | nginx публикует 80/443/8081 |
-| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init | нет (Qdrant — только 127.0.0.1:6333) |
+| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init, mcp-* | нет (Qdrant — только 127.0.0.1:6333) |
 
 nginx не имеет доступа к БД. Postgres/Qdrant/Redis не видны из LAN.
 Vikunja стоит в обеих сетях: nginx проксирует её через `frontend`,
@@ -48,6 +48,8 @@ Vikunja стоит в обеих сетях: nginx проксирует её ч�
 | 8080 | Open WebUI | только сеть `frontend` |
 | 3456 | Vikunja | только внутри Docker-сетей |
 | — | Telegram-бот | исходящий long polling, входящих портов нет |
+| — | MCP-серверы | только сеть `backend` |
+| — | vault-manager | через nginx по пути `/vault/`, Basic Auth |
 
 ## Тома
 
@@ -61,6 +63,9 @@ Vikunja стоит в обеих сетях: nginx проксирует её ч�
 | `vikunja_data` | `${DATA_ROOT}/volumes/vikunja` | вложения задач | `--with-files` |
 | — | `${DATA_ROOT}/backups` | бэкапы | — |
 | — | `${DATA_ROOT}/vault` | Obsidian-вольт (git) | git push |
+| — | `${DATA_ROOT}/vault-index` | FTS5-индекс вольта | не нужен (пересоздаётся) |
+| — | `${DATA_ROOT}/shared` | общий каталог файлов (MCP files) | `--with-files` не покрывает |
+| — | `${DATA_ROOT}/sandbox` | песочница MCP (код, прототипы) | не нужен |
 | — | `${DATA_ROOT}/secrets` | пароли, созданные скриптами (600) | не бэкапить в git |
 | — | `${DATA_ROOT}/docker` | docker data-root | — |
 
@@ -87,8 +92,13 @@ Telegram → bot (long polling) → API open-webui (`/api/chat/completions`
   CalDAV в Open WebUI v0.13.3 нет — см. ADR-016.
 - Задачи: браузер → nginx (:8081) → Vikunja → PostgreSQL (`vikunja`).
   Vikunja отдаёт задачи по CalDAV (`/dav/`) для календарей на телефоне.
-- MCP-сервер Vikunja (этап 4) даёт ассистенту создавать задачи на
-  естественном языке.
+- MCP-сервер Vikunja даёт ассистенту создавать задачи на естественном языке.
+
+### Инструменты (MCP)
+LLM решает вызвать инструмент → open-webui (`/mcp`, streamable HTTP) →
+контейнер `mcp-*` → результат возвращается в контекст → ответ LLM.
+Вольт: `vault_search` (FTS5) → `vault_read` → при записи git-коммит и push.
+Песочница: код исполняется в отдельном контейнере без доступа к хосту.
 
 ## Порядок запуска
 
@@ -113,7 +123,14 @@ Telegram → bot (long polling) → API open-webui (`/api/chat/completions`
 | redis | 64 МБ |
 | vikunja | 192 МБ |
 | db-init | 128 МБ (одноразово) |
-| **Итого лимитов** | **2464 МБ** |
+| mcp-vault | 128 МБ |
+| mcp-files | 64 МБ |
+| mcp-github | 96 МБ |
+| mcp-vikunja | 64 МБ |
+| mcp-sandbox | 192 МБ |
+| vault-manager | 96 МБ |
+| telegram-bot (профиль) | 96 МБ |
+| **Итого лимитов** | **3112 МБ** |
 
 ОС + Docker ≈ 600–800 МБ. Запас ~500 МБ и swap 2 ГБ.
 Лимиты — потолок, не резервация: в простое стек занимает заметно меньше.

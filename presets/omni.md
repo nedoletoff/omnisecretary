@@ -7,6 +7,7 @@ citations: false
 web_search: false
 code_interpreter: false
 vision: false
+tools: vikunja, files, vault
 ---
 
 Ты — Omni, универсальный AI-ассистент владельца OmniSecretary. У тебя есть

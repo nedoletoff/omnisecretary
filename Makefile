@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env
 
-.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs
+.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs mcp-build mcp-init mcp-logs vault-logs
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -65,3 +65,15 @@ tg-down: ## Остановить Telegram-бота
 
 tg-logs: ## Логи Telegram-бота
 	$(COMPOSE) --profile telegram logs -f --tail=100 telegram-bot
+
+mcp-build: ## Собрать образ MCP-серверов
+	$(COMPOSE) build mcp-vault
+
+mcp-init: ## Зарегистрировать MCP-серверы в Open WebUI (идемпотентно)
+	./scripts/init-mcp.sh
+
+mcp-logs: ## Логи всех MCP-серверов
+	$(COMPOSE) logs -f --tail=50 mcp-vault mcp-files mcp-github mcp-vikunja mcp-sandbox
+
+vault-logs: ## Логи формы подключения вольта
+	$(COMPOSE) logs -f --tail=50 vault-manager
