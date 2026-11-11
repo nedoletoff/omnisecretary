@@ -107,8 +107,21 @@ make mcp-build && make mcp-init
 8. **GitHub**: вписать fine-grained PAT в `GITHUB_TOKEN` (`.env`), затем
    `make restart`. Права — [docs/mcp.md](docs/mcp.md).
 9. Тема Gruvbox подключена автоматически; в Settings → Interface выберите Dark.
-10. Проверить `make smoke`.
-11. Настроить бэкапы в cron (см. ниже).
+10. **Telegram**: получить токен у @BotFather, вписать в `.env`
+    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_ID` (ваш числовой ID) и
+    `TELEGRAM_ALLOWED_IDS` (только вы), затем `make tg-up`.
+    Публичная регистрация и посторонние в боте запрещены — [docs/telegram.md](docs/telegram.md).
+11. **Брифинг**: вписать `WEATHER_LAT`/`WEATHER_LON` своего города,
+    проверить `make briefing`, затем `make proactive-up`.
+    Напоминания в боте: `/remind 20:30 текст`.
+12. **Голос**: `make voice-up`, в чате нажать микрофон. Если нужен лёгкий
+    вариант — `make voice-piper` и `AUDIO_TTS_OPENAI_API_BASE_URL=http://tts-piper:8000/v1`.
+13. **Перезагрузка** для memory-cgroup (параметры ядра уже прописаны):
+    `sudo reboot`, после — `make smoke`.
+14. Проверить `make smoke` (33 проверки).
+15. Настроить бэкапы и health-alert по таймеру — [docs/operations.md](docs/operations.md).
+16. Когда появится внешний диск — перенести `${DATA_ROOT}` по инструкции
+    [docs/operations.md](docs/operations.md#переезд-на-внешний-диск).
 
 ## Порты
 
