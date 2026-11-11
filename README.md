@@ -145,6 +145,9 @@ make tg-up       # запустить Telegram-бота
 make voice-up    # запустить STT + Silero TTS (профиль voice)
 make voice-piper # STT + Piper TTS (лёгкий вариант)
 make voice-logs  # логи голосовых сервисов
+make proactive-up    # утренний брифинг в Telegram
+make briefing        # собрать брифинг сейчас
+make briefing-send   # отправить брифинг в Telegram
 ```
 
 ## Бэкапы
@@ -192,6 +195,7 @@ make voice-logs  # логи голосовых сервисов
 - [docs/obsidian.md](docs/obsidian.md) — Obsidian-вольт: подключение, инструменты, правила записи.
 - [docs/mcp.md](docs/mcp.md) — MCP-серверы, права, песочница, добавление своего.
 - [docs/voice.md](docs/voice.md) — русский STT (Vosk/sherpa-onnx) и TTS (Silero, Piper).
+- [docs/proactive.md](docs/proactive.md) — утренний брифинг, PWA, ограничения.
 - [docs/telegram.md](docs/telegram.md) — бот, allowlist, раздельные аккаунты.
 - [docs/plan.md](docs/plan.md) — этапы и критерии перехода.
 - [docs/decisions.md](docs/decisions.md) — принятые решения и допущения.

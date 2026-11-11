@@ -584,6 +584,35 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # ── Проактивность: утренний брифинг в Telegram (профиль proactive) ─────
+  proactive:
+    build: ./proactive
+    image: omnisecretary-proactive:local
+    container_name: omni-proactive
+    profiles: ["proactive"]
+    restart: unless-stopped
+    environment:
+      BRIEFING_TZ: ${TZ:-Europe/Moscow}
+      BRIEFING_TIME: ${BRIEFING_TIME:-07:30}
+      WEBUI_BASE_URL: http://open-webui:8080
+      WEBUI_API_KEY: ${WEBUI_API_KEY:-}
+      VIKUNJA_BASE_URL: http://vikunja:3456
+      VIKUNJA_API_TOKEN: ${VIKUNJA_API_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
+      WEATHER_LAT: ${WEATHER_LAT:-}
+      WEATHER_LON: ${WEATHER_LON:-}
+      WEATHER_CITY: ${WEATHER_CITY:-}
+      VAULT_DIR: /vault
+    volumes:
+      - ${DATA_ROOT}/vault:/vault:ro
+      - proactive_state:/state
+    networks: [backend]
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
 networks:
   # nginx ↔ open-webui
   frontend:
@@ -631,3 +660,9 @@ volumes:
       type: none
       o: bind
       device: ${DATA_ROOT}/volumes/vikunja
+  proactive_state:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_ROOT}/volumes/proactive

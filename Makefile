@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env
 
-.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs mcp-build mcp-init mcp-logs vault-logs voice-up voice-piper voice-down voice-logs
+.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs mcp-build mcp-init mcp-logs vault-logs voice-up voice-piper voice-down voice-logs proactive-up proactive-down briefing briefing-send proactive-logs
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -89,3 +89,20 @@ voice-down: ## Остановить голосовые сервисы
 
 voice-logs: ## Логи STT и TTS
 	$(COMPOSE) --profile voice --profile voice-piper logs -f --tail=50 stt tts tts-piper
+
+proactive-up: ## Запустить утренний брифинг
+	$(COMPOSE) --profile proactive up -d proactive
+
+proactive-down: ## Остановить планировщик
+	$(COMPOSE) --profile proactive stop proactive
+
+briefing: ## Собрать брифинг сейчас (без отправки)
+	$(COMPOSE) --profile proactive exec -T proactive \
+		python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/briefing').read().decode())"
+
+briefing-send: ## Собрать и отправить брифинг в Telegram
+	$(COMPOSE) --profile proactive exec -T proactive \
+		python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/briefing?send=1').read().decode())"
+
+proactive-logs: ## Логи планировщика
+	$(COMPOSE) --profile proactive logs -f --tail=50 proactive

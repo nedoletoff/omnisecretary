@@ -94,6 +94,11 @@ Telegram → bot (long polling) → API open-webui (`/api/chat/completions`
   Vikunja отдаёт задачи по CalDAV (`/dav/`) для календарей на телефоне.
 - MCP-сервер Vikunja даёт ассистенту создавать задачи на естественном языке.
 
+### Проактивность
+`proactive` раз в сутки в `BRIEFING_TIME` собирает погоду (api.met.no),
+события (Open WebUI API), задачи (Vikunja API) и заметки (вольт, read-only)
+и отправляет текст в Telegram владельцу. Состояние — том `proactive_state`.
+
 ### Голос
 Браузер (микрофон) → open-webui → `stt:8000/v1/audio/transcriptions` →
 sherpa-onnx (модель Vosk small-ru) → текст в чат. Ответ → open-webui →
@@ -134,6 +139,7 @@ LLM решает вызвать инструмент → open-webui (`/mcp`, str
 | mcp-github | 96 МБ |
 | mcp-vikunja | 64 МБ |
 | mcp-sandbox | 192 МБ |
+| proactive (профиль proactive) | 96 МБ |
 | stt (профиль voice) | 320 МБ |
 | tts Silero (профиль voice) | 640 МБ |
 | tts-piper (профиль voice-piper) | 192 МБ |

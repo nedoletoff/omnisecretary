@@ -191,6 +191,7 @@ create_directories() {
         "$DATA_ROOT"/volumes/redis \
         "$DATA_ROOT"/volumes/openwebui \
         "$DATA_ROOT"/volumes/vikunja \
+        "$DATA_ROOT"/volumes/proactive \
         "$DATA_ROOT"/backups \
         "$DATA_ROOT"/vault \
         "$DATA_ROOT"/vault-index \

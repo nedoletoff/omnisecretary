@@ -83,6 +83,7 @@ check_http() {
 
 check_http "nginx /healthz"  "http://127.0.0.1/healthz" "200"
 check_http "open-webui /health (через nginx)" "http://127.0.0.1/health" "200"
+check_http "open-webui /manifest.json (PWA)" "http://127.0.0.1/manifest.json" "200"
 
 # ── 2b. Задачи (Vikunja) ─────────────────────────────────────
 if [[ "$QUIET" == "0" ]]; then
@@ -187,6 +188,17 @@ for name in omni-stt omni-tts omni-tts-piper; do
         voice_running=1
     fi
 done
+for name in omni-proactive; do
+    if "${DOCKER[@]}" inspect "$name" >/dev/null 2>&1; then
+        status="$("${DOCKER[@]}" inspect --format '{{.State.Health.Status}}' "$name" 2>/dev/null || echo none)"
+        if [[ "$status" == "healthy" ]]; then
+            pass "$name: healthy"
+        else
+            fail "$name: $status"
+        fi
+    fi
+done
+
 if [[ "$voice_running" == "1" ]]; then
     if [[ "$QUIET" == "0" ]]; then
         printf '\n%sГолос%s\n' "$C_BOLD" "$C_RESET"
