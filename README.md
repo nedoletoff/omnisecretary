@@ -18,6 +18,7 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 | 5 | Голос: Vosk-модель (sherpa-onnx) + Silero TTS, Piper как альтернатива | ✅ запущено и проверено |
 | 6 | Проактивность: утренний брифинг, напоминания, PWA | ✅ брифинг собирается (отправка в Telegram ждёт доступного API) |
 | 7 | Эксплуатация: HTTPS, бэкапы, мониторинг, напоминания | ✅ HTTPS выпущен и работает |
+| 8 | VPN-прокси для заблокированных сервисов (Telegram) | ✅ работает (`make vpn-test`) |
 
 Подробный план и критерии перехода между этапами — [docs/plan.md](docs/plan.md).
 
@@ -221,6 +222,7 @@ make briefing-send   # отправить брифинг в Telegram
 - [docs/voice.md](docs/voice.md) — русский STT (Vosk/sherpa-onnx) и TTS (Silero, Piper).
 - [docs/proactive.md](docs/proactive.md) — утренний брифинг, PWA, ограничения.
 - [docs/operations.md](docs/operations.md) — эксплуатация, бэкапы, переезд на диск, мониторинг.
+- [docs/vpn.md](docs/vpn.md) — VPN-прокси, выбор Auto-сервера, трафик
 - [docs/telegram.md](docs/telegram.md) — бот, allowlist, код подтверждения, Mini App.
 - [docs/search.md](docs/search.md) — веб-поиск для моделей, движки, экономия токенов.
 - [docs/router.md](docs/router.md) — проброс портов, DNS, HTTPS, Telegram Mini App.

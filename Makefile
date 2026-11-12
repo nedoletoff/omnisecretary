@@ -9,7 +9,7 @@ help: ## Показать список команд
 init: ## Первичная установка на Pi (идемпотентно)
 	./scripts/bootstrap-pi.sh
 
-up: ## Запустить стек
+up: vpn-config ## Запустить стек
 	$(COMPOSE) up -d --remove-orphans
 
 down: ## Остановить стек (данные сохраняются)
@@ -106,6 +106,27 @@ briefing-send: ## Собрать и отправить брифинг в Telegra
 
 proactive-logs: ## Логи планировщика
 	$(COMPOSE) --profile proactive logs -f --tail=50 proactive
+
+vpn-config: ## Сгенерировать конфиг VPN из подписки (быстрый Auto-сервер)
+	python3 scripts/vpn-config.py
+
+vpn-up: vpn-config ## Запустить/пересоздать VPN-прокси с новым конфигом
+	$(COMPOSE) up -d --force-recreate vpn
+
+vpn-down: ## Остановить VPN-прокси
+	$(COMPOSE) stop vpn
+
+vpn-logs: ## Логи VPN
+	$(COMPOSE) logs -f --tail=50 vpn
+
+vpn-traffic: ## Трафик VPN с момента старта
+	./scripts/vpn-traffic.sh
+
+vpn-watch: ## Скорость VPN в реальном времени
+	./scripts/vpn-traffic.sh --watch 5
+
+vpn-test: ## Проверить, что прокси работает (внешний IP)
+	@curl -s --max-time 30 -x http://127.0.0.1:2080 https://api.ipify.org && echo
 
 renew-certs: ## Продлить сертификаты Let's Encrypt и перезагрузить nginx
 	./scripts/renew-certs.sh

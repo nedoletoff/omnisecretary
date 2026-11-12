@@ -346,6 +346,30 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # ─────────────────────────────────────────────────────────────
+  # VPN-прокси: sing-box (VLESS) + mixed inbound (HTTP CONNECT/SOCKS5).
+  # Приложения получают HTTPS_PROXY=http://vpn:2080 и ходят в интернет
+  # через VPN; локальные сервисы (postgres, qdrant, open-webui) — напрямую
+  # через NO_PROXY. Обновления хоста (apt, docker pull) VPN не затрагивают.
+  # Конфиг генерирует scripts/vpn-config.py из подписки VPN_KEY.
+  # ─────────────────────────────────────────────────────────────
+  vpn:
+    image: ghcr.io/sagernet/sing-box:v1.12.9
+    container_name: omni-vpn
+    restart: unless-stopped
+    command: ["run", "-c", "/etc/sing-box/config.json"]
+    volumes:
+      - ${DATA_ROOT}/vpn/config.json:/etc/sing-box/config.json:ro
+    networks:
+      - backend
+    ports:
+      # Только localhost — для проверок и мониторинга с хоста.
+      - "127.0.0.1:2080:2080"
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
   # ── Telegram-бот: второе окно к тому же бэкенду ─────────────────────────
   # Запускается отдельным профилем: docker compose --profile telegram up -d
   # (make tg-up). Без TELEGRAM_BOT_TOKEN не стартует — так и задумано.
@@ -358,6 +382,8 @@ services:
     depends_on:
       open-webui:
         condition: service_healthy
+      vpn:
+        condition: service_started
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_API_BASE: ${TELEGRAM_API_BASE:-https://api.telegram.org}
@@ -372,6 +398,10 @@ services:
       WEATHER_LON: ${WEATHER_LON:-}
       WEATHER_CITY: ${WEATHER_CITY:-}
       OWUI_INTERNAL_URL: http://open-webui:8080
+      # VPN: api.telegram.org и погода — через прокси, OWUI — напрямую.
+      HTTPS_PROXY: http://vpn:2080
+      HTTP_PROXY: http://vpn:2080
+      NO_PROXY: open-webui,postgres,qdrant,redis,vikunja,vpn,localhost,127.0.0.1
       DATA_ROOT: /srv/omnisecretary
       TZ: ${TZ:-UTC}
     volumes:
@@ -620,11 +650,15 @@ services:
       WEATHER_CITY: ${WEATHER_CITY:-}
       VAULT_DIR: /vault
       BOT_DB_PATH: /data/bot/bot.db
+      HTTPS_PROXY: http://vpn:2080
+      HTTP_PROXY: http://vpn:2080
+      NO_PROXY: open-webui,vikunja,vpn,localhost,127.0.0.1
     volumes:
       - ${DATA_ROOT}/vault:/vault:ro
       - ${DATA_ROOT}/bot:/data/bot:ro
       - proactive_state:/state
-    networks: [backend]
+    networks:
+      - backend
     mem_limit: 96m
     security_opt:
       - no-new-privileges:true

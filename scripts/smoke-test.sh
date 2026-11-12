@@ -223,6 +223,17 @@ else
     fail "redis PING"
 fi
 
+# ── 6. VPN-прокси (если запущен) ─────────────────────────────
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx omni-vpn; then
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
+        -x http://127.0.0.1:2080 https://api.ipify.org 2>/dev/null || true)"
+    if [[ "$code" == "200" ]]; then
+        pass "vpn: прокси отдаёт внешний IP"
+    else
+        fail "vpn: прокси не отвечает (HTTP ${code:-000})"
+    fi
+fi
+
 # ── Итог ─────────────────────────────────────────────────────
 if [[ "$QUIET" == "0" ]]; then
     printf '\n%sИтог:%s %d ок, %d ошибок\n\n' "$C_BOLD" "$C_RESET" "$PASSED" "$FAILED"

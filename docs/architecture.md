@@ -29,7 +29,7 @@
 | Сеть | Кто в ней | Наружу |
 |---|---|---|
 | `frontend` | nginx, open-webui, vikunja | nginx публикует 80/443/8081 |
-| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init, mcp-* | нет (Qdrant — только 127.0.0.1:6333) |
+| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init, mcp-*, vpn | нет (Qdrant — только 127.0.0.1:6333, VPN-прокси — 127.0.0.1:2080) |
 
 nginx не имеет доступа к БД. Postgres/Qdrant/Redis не видны из LAN.
 Vikunja стоит в обеих сетях: nginx проксирует её через `frontend`,
@@ -43,6 +43,7 @@ Vikunja стоит в обеих сетях: nginx проксирует её ч�
 | 443 | nginx | `0.0.0.0` |
 | 8081 | nginx → Vikunja | `0.0.0.0` (только LAN, наружу не пробрасывать) |
 | 6333 | Qdrant | `127.0.0.1` (snapshot API для бэкапов) |
+| 2080 | VPN-прокси sing-box | `127.0.0.1` (HTTP CONNECT/SOCKS5) |
 | 5432 | PostgreSQL | только сеть `backend` |
 | 6379 | Redis | только сеть `backend` |
 | 8080 | Open WebUI | только сеть `frontend` |

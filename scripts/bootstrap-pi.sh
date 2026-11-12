@@ -199,6 +199,7 @@ create_directories() {
         "$DATA_ROOT"/sandbox \
         "$DATA_ROOT"/bot \
         "$DATA_ROOT"/secrets \
+        "$DATA_ROOT"/vpn \
         "$DATA_ROOT"/logs
 
     # Владельцы под UID внутри образов (иначе контейнер не запишет данные).
@@ -208,6 +209,9 @@ create_directories() {
     run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/backups "$DATA_ROOT"/vault \
         "$DATA_ROOT"/vault-index "$DATA_ROOT"/shared "$DATA_ROOT"/sandbox \
         "$DATA_ROOT"/bot "$DATA_ROOT"/secrets "$DATA_ROOT"/logs
+    # VPN-конфиг содержит ключи — только владельцу.
+    run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/vpn
+    run sudo chmod 700 "$DATA_ROOT"/vpn
 
     run mkdir -p "$ROOT_DIR/nginx/certs" "$ROOT_DIR/nginx/www"
     log_ok "Каталоги готовы"
