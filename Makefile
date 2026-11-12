@@ -125,6 +125,13 @@ vpn-traffic: ## Трафик VPN с момента старта
 vpn-watch: ## Скорость VPN в реальном времени
 	./scripts/vpn-traffic.sh --watch 5
 
+tg-avatar: ## Загрузить аватар бота (bot/avatar.png) через Bot API
+	@TOKEN=$$(grep -m1 '^TELEGRAM_BOT_TOKEN=' .env | cut -d= -f2- | tr -d '"'); \
+	curl -s --max-time 40 -x http://127.0.0.1:2080 \
+		-F 'photo={"type":"static","photo":"attach://avatar"}' \
+		-F "avatar=@bot/avatar.png" \
+		"https://api.telegram.org/bot$$TOKEN/setMyProfilePhoto"; echo
+
 vpn-test: ## Проверить, что прокси работает (внешний IP)
 	@curl -s --max-time 30 -x http://127.0.0.1:2080 https://api.ipify.org && echo
 

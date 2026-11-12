@@ -119,10 +119,19 @@ def tg(method: str, **params) -> dict:
 
 
 def send(chat_id: int, text: str) -> None:
-    """Отправка с разбивкой по 4096 символов (лимит Telegram)."""
+    """Отправка с разбивкой по 4096 символов (лимит Telegram).
+
+    Одна повторная попытка: VPN иногда рвёт TLS, теряя ответ.
+    """
     text = text.strip() or "(пустой ответ)"
     for start in range(0, len(text), 3900):
-        tg("sendMessage", chat_id=chat_id, text=text[start:start + 3900], disable_web_page_preview=True)
+        chunk = text[start:start + 3900]
+        result = tg("sendMessage", chat_id=chat_id, text=chunk,
+                    disable_web_page_preview=True)
+        if not result.get("ok"):
+            time.sleep(1.0)
+            tg("sendMessage", chat_id=chat_id, text=chunk,
+               disable_web_page_preview=True)
 
 
 def typing(chat_id: int) -> None:
@@ -761,8 +770,19 @@ def poll_forever() -> None:
     log.info("бот запущен; allowlist: %s; открытый доступ: %s",
              sorted(ALLOWED_IDS), OPEN_ACCESS)
     offset = 0
+    failures = 0
     while True:
-        response = tg("getUpdates", offset=offset, timeout=50, allowed_updates=json.dumps(["message"]))
+        # timeout=25: VPN/CDN иногда рвёт долгие TLS-соединения (50 с),
+        # короткий long-poll переживает это без потери сообщений.
+        response = tg("getUpdates", offset=offset, timeout=25,
+                      allowed_updates=json.dumps(["message"]))
+        if not response.get("ok"):
+            failures += 1
+            if failures in (1, 5) or failures % 100 == 0:
+                log.warning("getUpdates недоступен подряд: %d", failures)
+            time.sleep(min(5.0, 1.0 + failures))
+            continue
+        failures = 0
         for update in response.get("result", []) or []:
             offset = max(offset, update.get("update_id", 0) + 1)
             message = update.get("message") or {}
@@ -771,6 +791,7 @@ def poll_forever() -> None:
             chat_id = (message.get("chat") or {}).get("id")
             if not tg_id or not chat_id or not text:
                 continue
+            log.info("сообщение id=%s: %s", tg_id, text[:60])
             if not is_allowed(tg_id):
                 if OPEN_ACCESS and CONFIRM_CODE:
                     if text == CONFIRM_CODE:
@@ -790,7 +811,7 @@ def poll_forever() -> None:
             except Exception:
                 log.exception("обработка сообщения")
                 send(chat_id, "Внутренняя ошибка. Подробности в логах контейнера.")
-        time.sleep(0.5)
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":
