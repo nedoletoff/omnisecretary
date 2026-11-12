@@ -4,9 +4,10 @@ name: Secretary
 description: Личный секретарь — календарь, задачи, заметки, напоминания. Кратко и по делу.
 temperature: 0.4
 citations: false
-web_search: false
+web_search: true
 code_interpreter: false
 vision: false
+function_calling: legacy
 tools: vikunja, files
 ---
 

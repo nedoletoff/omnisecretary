@@ -4,9 +4,10 @@ name: Omni
 description: Универсальный ассистент с полным набором инструментов и памятью.
 temperature: 0.6
 citations: false
-web_search: false
+web_search: true
 code_interpreter: false
 vision: false
+function_calling: legacy
 tools: vikunja, files, vault
 ---
 

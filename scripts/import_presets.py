@@ -91,6 +91,9 @@ def parse_preset(path: Path) -> dict:
     params: dict[str, object] = {}
     if "temperature" in meta:
         params["temperature"] = meta["temperature"]
+    # legacy включает RAG-поиск (features.web_search) для моделей без tool calling
+    if "function_calling" in meta:
+        params["function_calling"] = meta["function_calling"]
 
     # tools: vikunja, files → meta.toolIds = ["server:mcp:vikunja", ...]
     # Пустое значение означает «без инструментов» (приватный режим).
@@ -163,6 +166,30 @@ def post_import(api_url: str, api_key: str, models: list[dict]) -> None:
     print(f"Импорт выполнен: {body}")
 
 
+def apply_model_fields(api_url: str, api_key: str, models: list[dict]) -> None:
+    """Дозаписывает params и meta: /models/import их не сохраняет в v0.13.3."""
+    url = api_url.rstrip("/") + "/api/v1/models/model/update"
+    for model in models:
+        payload = json.dumps({
+            "id": model["id"],
+            "name": model.get("name", model["id"]),
+            "params": model.get("params") or {},
+            "meta": model.get("meta") or {},
+        }).encode("utf-8")
+        request = urllib.request.Request(
+            url, data=payload, method="POST",
+            headers={"Content-Type": "application/json",
+                     "Authorization": f"Bearer {api_key}"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                response.read()
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")
+            raise SystemExit(
+                f"Обновление {model['id']}: HTTP {exc.code}: {detail[:300]}") from exc
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Импорт пресетов OmniSecretary")
     parser.add_argument(
@@ -216,6 +243,7 @@ def main() -> int:
         )
 
     post_import(api_url, args.api_key, models)
+    apply_model_fields(api_url, args.api_key, models)
     print(f"Готово: {len(models)} пресетов.")
     return 0
 

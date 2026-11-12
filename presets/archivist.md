@@ -4,9 +4,10 @@ name: Archivist
 description: Хранитель Obsidian-вольта — поиск, запись и структура заметок с экономией контекста.
 temperature: 0.2
 citations: false
-web_search: false
+web_search: true
 code_interpreter: false
 vision: false
+function_calling: legacy
 tools: vault
 ---
 

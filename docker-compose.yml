@@ -138,7 +138,13 @@ services:
       WEBUI_NAME: "OmniSecretary"
       DEFAULT_LOCALE: "ru-RU"
       GLOBAL_LOG_LEVEL: "INFO"
-      ENABLE_WEB_SEARCH: "false"
+      # Веб-поиск: DuckDuckGo через ddgs (проверен с Pi, ~10 с на запрос).
+      # Модели с capabilities.web_search=true получают поиск в чате.
+      ENABLE_WEB_SEARCH: "true"
+      WEB_SEARCH_ENGINE: ${WEB_SEARCH_ENGINE:-duckduckgo}
+      WEB_SEARCH_RESULT_COUNT: "3"
+      WEB_SEARCH_CONCURRENT_REQUESTS: "1"
+      WEB_SEARCH_TRUST_ENV: "false"
       TZ: ${TZ:-UTC}
     volumes:
       - openwebui_data:/app/backend/data
@@ -354,6 +360,9 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_ALLOWED_IDS: ${TELEGRAM_ALLOWED_IDS:-}
       TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
+      TELEGRAM_OPEN_ACCESS: ${TELEGRAM_OPEN_ACCESS:-false}
+      TELEGRAM_CONFIRM_CODE: ${TELEGRAM_CONFIRM_CODE:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
       TELEGRAM_ACCOUNT_MAP: ${TELEGRAM_ACCOUNT_MAP:-}
       TELEGRAM_DEFAULT_MODEL: ${TELEGRAM_DEFAULT_MODEL:-secretary}
       OWUI_INTERNAL_URL: http://open-webui:8080

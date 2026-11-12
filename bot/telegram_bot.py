@@ -46,6 +46,9 @@ for pair in os.environ.get("TELEGRAM_ACCOUNT_MAP", "").split(","):
             ACCOUNT_MAP[int(tg_id)] = email.strip()
 
 OWUI_URL = os.environ.get("OWUI_INTERNAL_URL", "http://open-webui:8080").rstrip("/")
+PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
+OPEN_ACCESS = os.environ.get("TELEGRAM_OPEN_ACCESS", "").strip().lower() in ("1", "true", "yes")
+CONFIRM_CODE = os.environ.get("TELEGRAM_CONFIRM_CODE", "").strip()
 DEFAULT_MODEL = os.environ.get("TELEGRAM_DEFAULT_MODEL", "secretary")
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/srv/omnisecretary"))
 SECRETS_DIR = DATA_ROOT / "secrets"
@@ -66,6 +69,7 @@ HELP_TEXT = """Я — OmniSecretary. Пишите текстом, я отвеч�
 /model <пресет> — сменить пресет для новых чатов
 /private — приватный режим: ничего не сохраняется
 /public — вернуться к обычному режиму
+/app — открыть веб-интерфейс (Mini App) в том же дизайне
 /remind 20:30 позвонить маме — напоминание (20:30, +15m, 12.11 09:00)
 /reminders — ближайшие напоминания
 /forget <id> — удалить напоминание
@@ -208,6 +212,10 @@ def db() -> sqlite3.Connection:
             private INTEGER NOT NULL DEFAULT 0,
             private_messages TEXT NOT NULL DEFAULT '[]'
         );
+        CREATE TABLE IF NOT EXISTS allowed (
+            tg_id INTEGER PRIMARY KEY,
+            added_at TEXT NOT NULL DEFAULT ''
+        );
         CREATE TABLE IF NOT EXISTS reminders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tg_id INTEGER NOT NULL,
@@ -219,6 +227,34 @@ def db() -> sqlite3.Connection:
         """
     )
     return conn
+
+
+def is_allowed(tg_id: int) -> bool:
+    """Доступ: явный allowlist, владелец или подтверждённый кодом пользователь."""
+    if tg_id == OWNER_ID or tg_id in ALLOWED_IDS:
+        return True
+    conn = db()
+    row = conn.execute("SELECT 1 FROM allowed WHERE tg_id = ?", (tg_id,)).fetchone()
+    conn.close()
+    return row is not None
+
+
+def allow(tg_id: int) -> None:
+    conn = db()
+    conn.execute(
+        "INSERT OR IGNORE INTO allowed (tg_id, added_at) VALUES (?, ?)",
+        (tg_id, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+    conn.commit()
+    conn.close()
+
+
+def allowed_list() -> list[int]:
+    conn = db()
+    rows = conn.execute("SELECT tg_id FROM allowed ORDER BY tg_id").fetchall()
+    conn.close()
+    return sorted(set(ALLOWED_IDS) | {row["tg_id"] for row in rows} |
+                  ({OWNER_ID} if OWNER_ID else set()))
 
 
 def get_state(tg_id: int) -> sqlite3.Row:
@@ -534,6 +570,29 @@ def handle_command(tg_id: int, chat_id: int, text: str) -> bool:
         send(chat_id, "Удалено." if cursor.rowcount else "Такого напоминания нет.")
         return True
 
+    if command == "/app":
+        if not PUBLIC_URL:
+            send(chat_id, "Публичный адрес не задан (PUBLIC_URL). "
+                          "Для Mini App нужен HTTPS — см. docs/router.md.")
+            return True
+        if PUBLIC_URL.startswith("https://"):
+            keyboard = {"inline_keyboard": [[
+                {"text": "Открыть OmniSecretary", "web_app": {"url": PUBLIC_URL}}]]}
+            hint = "Открываю веб-интерфейс внутри Telegram."
+        else:
+            keyboard = {"inline_keyboard": [[
+                {"text": "Открыть в браузере", "url": PUBLIC_URL}]]}
+            hint = ("Mini App требует HTTPS, поэтому откроется браузер. "
+                    "Как получить HTTPS — docs/router.md.")
+        tg("sendMessage", chat_id=chat_id, text=hint,
+           reply_markup=json.dumps(keyboard))
+        return True
+
+    if command == "/users" and tg_id == OWNER_ID:
+        ids = allowed_list()
+        send(chat_id, "Доступ: " + (", ".join(str(i) for i in ids) if ids else "никого"))
+        return True
+
     if command == "/private":
         set_state(tg_id, private=1, private_messages="[]")
         send(chat_id, "Приватный режим: сообщения не сохраняются, история и память не используются.\n"
@@ -581,10 +640,12 @@ def poll_forever() -> None:
     if not TELEGRAM_TOKEN:
         log.error("TELEGRAM_BOT_TOKEN не задан — бот не может работать")
         sys.exit(1)
-    if not ALLOWED_IDS:
-        log.error("TELEGRAM_ALLOWED_IDS пуст — бот никого не пустит")
+    if not ALLOWED_IDS and not (OPEN_ACCESS and CONFIRM_CODE):
+        log.error("TELEGRAM_ALLOWED_IDS пуст и открытый доступ выключен — "
+                  "бот никого не пустит")
         sys.exit(1)
-    log.info("бот запущен, разрешено ID: %s", sorted(ALLOWED_IDS))
+    log.info("бот запущен; allowlist: %s; открытый доступ: %s",
+             sorted(ALLOWED_IDS), OPEN_ACCESS)
     offset = 0
     while True:
         response = tg("getUpdates", offset=offset, timeout=50, allowed_updates=json.dumps(["message"]))
@@ -596,7 +657,16 @@ def poll_forever() -> None:
             chat_id = (message.get("chat") or {}).get("id")
             if not tg_id or not chat_id or not text:
                 continue
-            if tg_id not in ALLOWED_IDS:
+            if not is_allowed(tg_id):
+                if OPEN_ACCESS and CONFIRM_CODE:
+                    if text == CONFIRM_CODE:
+                        allow(tg_id)
+                        send(chat_id, "Доступ открыт. Напишите /help — покажу команды.")
+                        log.info("доступ по коду: id=%s", tg_id)
+                    else:
+                        send(chat_id, "🔒 Это приватный ассистент. "
+                                      "Отправьте код подтверждения.")
+                    continue
                 log.warning("отказ доступа: id=%s username=%s", tg_id,
                             (message.get("from") or {}).get("username"))
                 continue

@@ -73,8 +73,9 @@ make mcp-build && make mcp-init
 ```
 
 По умолчанию в `.env.example` уже прописана **бесплатная тестовая модель**
-(Pollinations, без ключа). Для продакшна замените `OPENAI_API_BASE_URL`
-и `OPENAI_API_KEY` на своего провайдера и выполните
+(Pollinations, без ключа). Ограничение бесплатного тарифа — 1 ответ в 45
+секунд на IP (при превышении HTTP 402 `FREE_LIMIT`). Для продакшна замените
+`OPENAI_API_BASE_URL` и `OPENAI_API_KEY` на своего провайдера и выполните
 `make restart && make init-webui`.
 
 `make init-webui` идемпотентен: повторный запуск не дублирует пользователя
@@ -211,7 +212,9 @@ make briefing-send   # отправить брифинг в Telegram
 - [docs/voice.md](docs/voice.md) — русский STT (Vosk/sherpa-onnx) и TTS (Silero, Piper).
 - [docs/proactive.md](docs/proactive.md) — утренний брифинг, PWA, ограничения.
 - [docs/operations.md](docs/operations.md) — эксплуатация, бэкапы, переезд на диск, мониторинг.
-- [docs/telegram.md](docs/telegram.md) — бот, allowlist, раздельные аккаунты.
+- [docs/telegram.md](docs/telegram.md) — бот, allowlist, код подтверждения, Mini App.
+- [docs/search.md](docs/search.md) — веб-поиск для моделей, движки, экономия токенов.
+- [docs/router.md](docs/router.md) — проброс портов, DNS, HTTPS, Telegram Mini App.
 - [docs/plan.md](docs/plan.md) — этапы и критерии перехода.
 - [docs/decisions.md](docs/decisions.md) — принятые решения и допущения.
 - [docs/security.md](docs/security.md) — секреты, доступ, подтверждения.
