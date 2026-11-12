@@ -13,7 +13,7 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 |---|---|---|
 | 1 | Ядро: Open WebUI + PostgreSQL + Qdrant + Redis + Nginx, скрипты | ✅ реализовано |
 | 2 | Календарь Open WebUI, задачи (Vikunja), пресеты-«лица» | ✅ реализовано |
-| 3 | Telegram-бот, allowlist, код подтверждения, Mini App | ⚠️ код готов, но api.telegram.org заблокирован в сети Pi (см. [docs/telegram.md](docs/telegram.md#если-apitelegramorg-заблокирован)) |
+| 3 | Telegram-бот, allowlist, код подтверждения, Mini App | ✅ бот @nd_omnisecretarybot работает через VPN |
 | 4 | MCP: Obsidian, GitHub, Filesystem, песочница, Vikunja | ✅ реализовано |
 | 5 | Голос: Vosk-модель (sherpa-onnx) + Silero TTS, Piper как альтернатива | ✅ запущено и проверено |
 | 6 | Проактивность: утренний брифинг, напоминания, PWA | ✅ брифинг собирается (отправка в Telegram ждёт доступного API) |

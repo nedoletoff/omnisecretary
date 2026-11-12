@@ -127,7 +127,7 @@ def tcp_latency(host: str, port: int, timeout: float = 3.0) -> float | None:
         return None
 
 
-def build_config(outbound: dict) -> dict:
+def build_config(outbounds: list[dict]) -> dict:
     """Mixed-прокси (HTTP CONNECT + SOCKS5) без TUN.
 
     Приложения ходят через прокси по env HTTPS_PROXY/HTTP_PROXY. Это
@@ -152,7 +152,20 @@ def build_config(outbound: dict) -> dict:
             "listen": "0.0.0.0",
             "listen_port": 2080,
         }],
-        "outbounds": [outbound, {"type": "direct", "tag": "direct"}],
+        # Несколько серверов + автопереключение: если один отваливается,
+        # sing-box сам переходит на следующий по доступности.
+        "outbounds": [
+            *outbounds,
+            {
+                "type": "urltest",
+                "tag": "proxy",
+                "outbounds": [item["tag"] for item in outbounds],
+                "url": "https://www.gstatic.com/generate_204",
+                "interval": "3m",
+                "tolerance": 50,
+            },
+            {"type": "direct", "tag": "direct"},
+        ],
         "route": {
             "final": "proxy",
             "default_domain_resolver": "local",
@@ -222,15 +235,22 @@ def main() -> int:
         print("[fail] ни один Auto-сервер не отвечает по TCP", file=sys.stderr)
         return 1
     measured.sort(key=lambda pair: pair[0])
-    latency, chosen = measured[0]
+    # Берём до 6 самых быстрых: urltest переключится, если сервер отвалится.
+    selected = measured[:6]
+    outbounds = []
+    for index, (latency, item) in enumerate(selected, start=1):
+        outbound = dict(item["outbound"])
+        outbound["tag"] = f"s{index}"
+        outbounds.append(outbound)
+        print(f"  s{index}: {item['name']} ({latency:.0f} мс)")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
-        json.dumps(build_config(chosen["outbound"]), ensure_ascii=False, indent=2) + "\n",
+        json.dumps(build_config(outbounds), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
     out_path.chmod(0o600)
-    print(f"[ok] сервер: {chosen['name']} ({latency:.0f} мс) → {out_path}")
+    print(f"[ok] серверов в пуле: {len(outbounds)} → {out_path}")
     return 0
 
 
