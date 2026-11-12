@@ -13,10 +13,11 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 |---|---|---|
 | 1 | Ядро: Open WebUI + PostgreSQL + Qdrant + Redis + Nginx, скрипты | ✅ реализовано |
 | 2 | Календарь Open WebUI, задачи (Vikunja), пресеты-«лица» | ✅ реализовано |
-| 3 | Telegram-бот, allowlist, многопользовательский режим | ✅ реализовано (нужен токен бота) |
+| 3 | Telegram-бот, allowlist, код подтверждения, Mini App | ⚠️ код готов, но api.telegram.org заблокирован в сети Pi (см. [docs/telegram.md](docs/telegram.md#если-apitelegramorg-заблокирован)) |
 | 4 | MCP: Obsidian, GitHub, Filesystem, песочница, Vikunja | ✅ реализовано |
 | 5 | Голос: Vosk-модель (sherpa-onnx) + Silero TTS, Piper как альтернатива | ✅ запущено и проверено |
-| 6 | Проактивность: утренний брифинг, напоминания, PWA | ⏳ |
+| 6 | Проактивность: утренний брифинг, напоминания, PWA | ✅ брифинг собирается (отправка в Telegram ждёт доступного API) |
+| 7 | Эксплуатация: HTTPS, бэкапы, мониторинг, напоминания | ✅ HTTPS выпущен и работает |
 
 Подробный план и критерии перехода между этапами — [docs/plan.md](docs/plan.md).
 
@@ -89,8 +90,16 @@ make mcp-build && make mcp-init
 
 ## Ручные шаги после установки
 
-1. Открыть `http://<ip-pi>`, войти владельцем: логин и пароль —
-   `${DATA_ROOT}/secrets/webui-owner.txt`. Сменить пароль в Settings → Account.
+1. Открыть `https://nedoletoff.sknt.ru` (или `http://<ip-pi>` в LAN).
+   **Логин `admin`**, пароль — в `/srv/omnisecretary/secrets/webui-owner.txt`:
+
+   ```bash
+   cat /srv/omnisecretary/secrets/webui-owner.txt
+   ```
+
+   Поле входа подписано «Email», но принимает логин `admin` — почта не нужна.
+   Сменить пароль: Settings → Account. Если пароль потерян — сброс в Admin
+   Panel → Users (владелец) или `make init-webui` (пересоздаст учётку).
 2. Провайдер LLM уже настроен из `.env` (`make init-webui`). Для продакшна
    заменить `OPENAI_API_BASE_URL`/`OPENAI_API_KEY` и выполнить
    `make restart && make init-webui`.

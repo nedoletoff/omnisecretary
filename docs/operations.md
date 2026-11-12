@@ -131,6 +131,19 @@ make update        # git pull + пересборка + smoke
 2. Поменять тег, `make pull && make up`.
 3. `make smoke`, прогнать чат/инструменты, затем коммит.
 
+## Сертификаты
+
+```bash
+make renew-certs       # продлить и перезагрузить nginx
+```
+
+Сертификат `nedoletoff.sknt.ru` живёт в `/etc/letsencrypt/live/...` (смонтирован
+в nginx read-only). Автопродление — cron:
+
+```cron
+17 3 * * * /opt/omnisecretary/scripts/renew-certs.sh >> /var/log/omni-certs.log 2>&1
+```
+
 ## Логи и износ SD
 
 - Docker: json-file, 10 МБ × 3 на контейнер (`logging` в compose).

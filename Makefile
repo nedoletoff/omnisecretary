@@ -106,3 +106,10 @@ briefing-send: ## Собрать и отправить брифинг в Telegra
 
 proactive-logs: ## Логи планировщика
 	$(COMPOSE) --profile proactive logs -f --tail=50 proactive
+
+renew-certs: ## Продлить сертификаты Let's Encrypt и перезагрузить nginx
+	./scripts/renew-certs.sh
+
+owner-creds: ## Показать логин и пароль владельца (секрет!)
+	@echo "Логин: admin"
+	@echo "Пароль: $$(grep '^PASSWORD=' $(DATA_ROOT)/secrets/webui-owner.txt | cut -d= -f2-)"

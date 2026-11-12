@@ -39,6 +39,8 @@ services:
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - ./nginx/certs:/etc/nginx/certs:ro
       - ./nginx/www:/var/www/certbot:ro
+      # Сертификаты Let's Encrypt (выпуск/продление — scripts/renew-certs.sh).
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - frontend
     healthcheck:
@@ -358,6 +360,7 @@ services:
         condition: service_healthy
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_API_BASE: ${TELEGRAM_API_BASE:-https://api.telegram.org}
       TELEGRAM_ALLOWED_IDS: ${TELEGRAM_ALLOWED_IDS:-}
       TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
       TELEGRAM_OPEN_ACCESS: ${TELEGRAM_OPEN_ACCESS:-false}
@@ -365,6 +368,9 @@ services:
       PUBLIC_URL: ${PUBLIC_URL:-}
       TELEGRAM_ACCOUNT_MAP: ${TELEGRAM_ACCOUNT_MAP:-}
       TELEGRAM_DEFAULT_MODEL: ${TELEGRAM_DEFAULT_MODEL:-secretary}
+      WEATHER_LAT: ${WEATHER_LAT:-}
+      WEATHER_LON: ${WEATHER_LON:-}
+      WEATHER_CITY: ${WEATHER_CITY:-}
       OWUI_INTERNAL_URL: http://open-webui:8080
       DATA_ROOT: /srv/omnisecretary
       TZ: ${TZ:-UTC}
@@ -613,8 +619,10 @@ services:
       WEATHER_LON: ${WEATHER_LON:-}
       WEATHER_CITY: ${WEATHER_CITY:-}
       VAULT_DIR: /vault
+      BOT_DB_PATH: /data/bot/bot.db
     volumes:
       - ${DATA_ROOT}/vault:/vault:ro
+      - ${DATA_ROOT}/bot:/data/bot:ro
       - proactive_state:/state
     networks: [backend]
     mem_limit: 96m

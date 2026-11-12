@@ -46,7 +46,26 @@ for pair in os.environ.get("TELEGRAM_ACCOUNT_MAP", "").split(","):
             ACCOUNT_MAP[int(tg_id)] = email.strip()
 
 OWUI_URL = os.environ.get("OWUI_INTERNAL_URL", "http://open-webui:8080").rstrip("/")
+# api.telegram.org может быть заблокирован на уровне сети (РФ). Прокси:
+# TELEGRAM_API_BASE=https://<worker>/proxy/<secret>
+TELEGRAM_API_BASE = os.environ.get(
+    "TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
 PUBLIC_URL = os.environ.get("PUBLIC_URL", "").rstrip("/")
+WEATHER_LAT = os.environ.get("WEATHER_LAT", "").strip()
+WEATHER_LON = os.environ.get("WEATHER_LON", "").strip()
+WEATHER_CITY = os.environ.get("WEATHER_CITY", "").strip()
+WEATHER_UA = "OmniSecretary/1.0 (self-hosted)"
+
+SYMBOLS = {
+    "clearsky": "ясно", "fair": "малооблачно", "partlycloudy": "переменная облачность",
+    "cloudy": "облачно", "fog": "туман", "lightrain": "небольшой дождь",
+    "rain": "дождь", "heavyrain": "сильный дождь", "lightrainshowers": "ливни",
+    "rainshowers": "ливни", "heavyrainshowers": "сильные ливни",
+    "lightsleet": "небольшой мокрый снег", "sleet": "мокрый снег",
+    "lightsnow": "небольшой снег", "snow": "снег", "heavysnow": "сильный снег",
+    "lightsnowshowers": "снегопады", "snowshowers": "снегопады",
+    "thunderstorm": "гроза",
+}
 OPEN_ACCESS = os.environ.get("TELEGRAM_OPEN_ACCESS", "").strip().lower() in ("1", "true", "yes")
 CONFIRM_CODE = os.environ.get("TELEGRAM_CONFIRM_CODE", "").strip()
 DEFAULT_MODEL = os.environ.get("TELEGRAM_DEFAULT_MODEL", "secretary")
@@ -69,6 +88,7 @@ HELP_TEXT = """Я — OmniSecretary. Пишите текстом, я отвеч�
 /model <пресет> — сменить пресет для новых чатов
 /private — приватный режим: ничего не сохраняется
 /public — вернуться к обычному режиму
+/weather [город] — погода; с городом — сменить локацию
 /app — открыть веб-интерфейс (Mini App) в том же дизайне
 /remind 20:30 позвонить маме — напоминание (20:30, +15m, 12.11 09:00)
 /reminders — ближайшие напоминания
@@ -81,7 +101,7 @@ HELP_TEXT = """Я — OmniSecretary. Пишите текстом, я отвеч�
 
 def tg(method: str, **params) -> dict:
     """Вызов Telegram Bot API. Ошибки сети не роняют процесс."""
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}"
+    url = f"{TELEGRAM_API_BASE}/bot{TELEGRAM_TOKEN}/{method}"
     data = urllib.parse.urlencode(params).encode("utf-8")
     request = urllib.request.Request(url, data=data)
     try:
@@ -212,6 +232,12 @@ def db() -> sqlite3.Connection:
             private INTEGER NOT NULL DEFAULT 0,
             private_messages TEXT NOT NULL DEFAULT '[]'
         );
+        CREATE TABLE IF NOT EXISTS settings (
+            tg_id INTEGER PRIMARY KEY,
+            city TEXT NOT NULL,
+            lat REAL NOT NULL,
+            lon REAL NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS allowed (
             tg_id INTEGER PRIMARY KEY,
             added_at TEXT NOT NULL DEFAULT ''
@@ -255,6 +281,74 @@ def allowed_list() -> list[int]:
     conn.close()
     return sorted(set(ALLOWED_IDS) | {row["tg_id"] for row in rows} |
                   ({OWNER_ID} if OWNER_ID else set()))
+
+
+def geocode(query: str) -> tuple[float, float, str] | None:
+    """Координаты по названию через Nominatim (OSM). Без ключа."""
+    params = urllib.parse.urlencode(
+        {"q": query, "format": "jsonv2", "limit": 1, "accept-language": "ru"})
+    request = urllib.request.Request(
+        f"https://nominatim.openstreetmap.org/search?{params}",
+        headers={"User-Agent": WEATHER_UA})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            found = json.loads(response.read().decode())
+    except Exception:
+        log.warning("geocode: ошибка запроса", exc_info=True)
+        return None
+    if not found:
+        return None
+    item = found[0]
+    return float(item["lat"]), float(item["lon"]), item.get("display_name", query)
+
+
+def weather_at(lat: float, lon: float, city: str) -> str:
+    url = ("https://api.met.no/weatherapi/locationforecast/2.0/compact"
+           f"?lat={lat}&lon={lon}")
+    request = urllib.request.Request(url, headers={"User-Agent": WEATHER_UA})
+    try:
+        with urllib.request.urlopen(request, timeout=25) as response:
+            data = json.loads(response.read().decode())
+    except Exception as error:  # noqa: BLE001 — не роняем бота
+        return f"Погода недоступна ({type(error).__name__})."
+    series = data["properties"]["timeseries"]
+    current = series[0]["data"]["instant"]["details"]["air_temperature"]
+    temps = [p["data"]["instant"]["details"]["air_temperature"] for p in series[:12]]
+    symbol = ""
+    precipitation = 0.0
+    for point in series[:12]:
+        details = point["data"].get("next_1_hours") or point["data"].get("next_6_hours")
+        if details:
+            symbol = details.get("summary", {}).get("symbol_code", "")
+            precipitation += float(
+                details.get("details", {}).get("precipitation_amount", 0) or 0)
+    kind = SYMBOLS.get(symbol.split("_")[0], symbol or "без данных")
+    return (f"{city}: сейчас {current:+.0f} °C, {kind}; "
+            f"за 12 ч от {min(temps):+.0f} до {max(temps):+.0f} °C, "
+            f"осадки {precipitation:.1f} мм.")
+
+
+def user_place(tg_id: int) -> tuple[float, float, str] | None:
+    conn = db()
+    row = conn.execute(
+        "SELECT city, lat, lon FROM settings WHERE tg_id = ?", (tg_id,)).fetchone()
+    conn.close()
+    if row:
+        return row["lat"], row["lon"], row["city"]
+    if WEATHER_LAT and WEATHER_LON:
+        return float(WEATHER_LAT), float(WEATHER_LON), WEATHER_CITY or "Погода"
+    return None
+
+
+def save_place(tg_id: int, city: str, lat: float, lon: float) -> None:
+    conn = db()
+    conn.execute(
+        "INSERT INTO settings (tg_id, city, lat, lon) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(tg_id) DO UPDATE SET city = excluded.city, "
+        "lat = excluded.lat, lon = excluded.lon",
+        (tg_id, city, lat, lon))
+    conn.commit()
+    conn.close()
 
 
 def get_state(tg_id: int) -> sqlite3.Row:
@@ -322,7 +416,8 @@ def provision_account(tg_id: int) -> Owui:
         except OwuiError:
             log.warning("не удалось войти под %s, пересоздаю", stored["email"])
 
-    email = mapped or f"tg{tg_id}@omnisecretary.local"
+    # Логин без почты: имя пользователя = tg<id>
+    email = mapped or f"tg{tg_id}"
     password = uuid.uuid4().hex + uuid.uuid4().hex[:8]
 
     admin = owner_client()
@@ -568,6 +663,25 @@ def handle_command(tg_id: int, chat_id: int, text: str) -> bool:
         conn.commit()
         conn.close()
         send(chat_id, "Удалено." if cursor.rowcount else "Такого напоминания нет.")
+        return True
+
+    if command == "/weather":
+        if argument:
+            found = geocode(argument)
+            if not found:
+                send(chat_id, f"Не нашёл «{argument}». Уточните: /weather Санкт-Петербург")
+                return True
+            lat, lon, label = found
+            city = label.split(",")[0].strip() or argument
+            save_place(tg_id, city, lat, lon)
+            send(chat_id, f"Локация сохранена: {city}.\n" + weather_at(lat, lon, city))
+            return True
+        place = user_place(tg_id)
+        if not place:
+            send(chat_id, "Локация не задана. Пример: /weather Санкт-Петербург")
+            return True
+        lat, lon, city = place
+        send(chat_id, weather_at(lat, lon, city))
         return True
 
     if command == "/app":

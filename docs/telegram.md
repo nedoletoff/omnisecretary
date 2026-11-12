@@ -34,7 +34,7 @@ make tg-logs    # смотреть логи
 |---|---|---|
 | `TELEGRAM_OWNER_ID` | владелец (`secrets/webui-owner.txt`) | свои чаты из веба и Telegram |
 | из `TELEGRAM_ACCOUNT_MAP` | указанный email | свои чаты этого аккаунта |
-| остальные из allowlist | `tg<id>@omnisecretary.local` (создаётся автоматически) | только свои чаты |
+| остальные из allowlist | `tg<id>` (создаётся автоматически) | только свои чаты |
 
 Каждый аккаунт видит только свои чаты: список чатов и память в Open WebUI
 привязаны к пользователю. Шаринг чатов и заметок выключен на уровне прав
@@ -78,6 +78,7 @@ TELEGRAM_CONFIRM_CODE=<16 символов>
 | `/users` | (владелец) кто допущен к боту |
 | `/private` | приватный режим: ничего не сохраняется, история не читается |
 | `/public` | вернуться к обычным чатам |
+| `/weather [город]` | погода; с городом — сменить личную локацию |
 | `/remind 20:30 текст` | напоминание (`+15m`, `12.11 09:00`) |
 | `/reminders` | активные напоминания |
 | `/forget <id>` | удалить напоминание |
@@ -87,6 +88,19 @@ TELEGRAM_CONFIRM_CODE=<16 символов>
 и не пишет в память. Контекст живёт только в памяти процесса бота
 (последние 6 пар сообщений) и исчезает при перезапуске.
 
+## Погода и личная локация
+
+По умолчанию — Санкт-Петербург, Ломоносовская (`WEATHER_LAT/LON/CITY` в `.env`).
+Каждый пользователь может задать свою:
+
+```
+/weather Казань          # геокодинг OSM + сохранение
+/weather                 # текущая погода для сохранённой локации
+```
+
+Локация хранится в `bot.db` (таблица `settings`) и не пересекается между
+пользователями. Брифинг владельца берёт его локацию из той же таблицы.
+
 ## Mini App (тот же дизайн)
 
 Команда `/app` присылает кнопку. Если `PUBLIC_URL` начинается с `https://`,
@@ -95,6 +109,61 @@ Telegram открывает веб-интерфейс внутри себя (Web
 ссылка в браузере: Telegram требует HTTPS для Mini App.
 
 HTTPS и проброс портов — [docs/router.md](router.md).
+
+## Если api.telegram.org заблокирован
+
+В сети SkyNet с Pi недоступны все DC Telegram (`149.154.166.110`,
+`149.154.167.220`, `149.154.175.50`, `91.108.56.130` — порт 443 закрыт).
+Бот при этом пишет в лог `Network is unreachable` и не получает сообщения.
+
+Варианты:
+
+1. **VPN/прокси на Pi** (WireGuard до доверенного узла) — тогда
+   `TELEGRAM_API_BASE=https://api.telegram.org` работает как есть.
+2. **Cloudflare Worker-прокси** (бесплатно, исходящий трафик Worker'а не
+   блокируется). Код воркера:
+
+```js
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const prefix = `/proxy/${env.SECRET}`;
+    if (!url.pathname.startsWith(prefix)) {
+      return new Response("forbidden", { status: 403 });
+    }
+    const target = "https://api.telegram.org" +
+      url.pathname.slice(prefix.length) + url.search;
+    return fetch(target, {
+      method: request.method,
+      headers: request.headers,
+      body: request.method === "GET" ? undefined : request.body,
+    });
+  },
+};
+```
+
+Переменная окружения воркера `SECRET` — случайная строка. Затем в `.env`:
+
+```dotenv
+TELEGRAM_API_BASE=https://<worker>.workers.dev/proxy/<SECRET>
+```
+
+и `make tg-restart`.
+
+Важно: токен бота проходит через воркер. Держите `SECRET` в тайне, при
+утечке — перевыпустите токен у @BotFather.
+
+3. **Отложить Telegram** и пользоваться вебом/PWA: чаты, пресеты, календарь
+   и задачи работают без бота. Брифинг собирается (`make briefing`), но
+   отправка в Telegram тоже требует доступного API.
+
+Проверка доступности:
+
+```bash
+curl -4 -s -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.telegram.org
+```
+
+`000` — заблокирован; `404`/`200` — доступен.
 
 ## Ограничения
 

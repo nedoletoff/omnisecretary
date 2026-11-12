@@ -69,11 +69,32 @@ def http_json(url: str, headers: dict | None = None,
         return json.loads(response.read().decode())
 
 
+def owner_place() -> tuple[str, str, str]:
+    """Локация владельца из настроек бота (если задана), иначе env."""
+    lat, lon, city = WEATHER_LAT, WEATHER_LON, WEATHER_CITY
+    db_path = os.environ.get("BOT_DB_PATH", "")
+    owner = os.environ.get("TELEGRAM_OWNER_ID", "").strip()
+    if db_path and owner.isdigit() and os.path.exists(db_path):
+        try:
+            import sqlite3
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            row = conn.execute(
+                "SELECT city, lat, lon FROM settings WHERE tg_id = ?",
+                (int(owner),)).fetchone()
+            conn.close()
+            if row:
+                city, lat, lon = row[0], str(row[1]), str(row[2])
+        except Exception:  # noqa: BLE001 — брифинг не должен падать
+            pass
+    return lat, lon, city
+
+
 def weather_text() -> str:
-    if not WEATHER_LAT or not WEATHER_LON:
+    lat, lon, city = owner_place()
+    if not lat or not lon:
         return "Погода: не настроена (WEATHER_LAT/WEATHER_LON)."
     url = ("https://api.met.no/weatherapi/locationforecast/2.0/compact"
-           f"?lat={WEATHER_LAT}&lon={WEATHER_LON}")
+           f"?lat={lat}&lon={lon}")
     try:
         data = http_json(url, {"User-Agent": "OmniSecretary/1.0 (self-hosted)"})
     except Exception as error:  # noqa: BLE001 — брифинг не должен падать
@@ -91,7 +112,7 @@ def weather_text() -> str:
             symbol = details.get("summary", {}).get("symbol_code", "")
             precipitation += float(details.get("details", {}).get("precipitation_amount", 0) or 0)
     kind = SYMBOLS.get(symbol.split("_")[0], symbol or "без данных")
-    return (f"Погода ({WEATHER_CITY}): сейчас {current:+.0f} °C, {kind}; "
+    return (f"Погода ({city}): сейчас {current:+.0f} °C, {kind}; "
             f"за 12 ч от {min(temps):+.0f} до {max(temps):+.0f} °C, "
             f"осадки {precipitation:.1f} мм.")
 

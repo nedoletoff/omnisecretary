@@ -32,6 +32,9 @@
 
 Правила:
 - Пароль Postgres — hex: попадает в `DATABASE_URL`, спецсимволы ломают URL.
+- Учётные данные владельца: `/srv/omnisecretary/secrets/webui-owner.txt`
+  (логин `admin`, пароль рядом; `make owner-creds`). Почта не используется —
+  вход по логину.
 - `.env` не бэкапится автоматически и не покидает Pi.
 - Пароль пользователя Vikunja, созданный `make vikunja-admin`, лежит в
   `${DATA_ROOT}/secrets/vikunja-admin.txt` (права 600). Сменить в интерфейсе

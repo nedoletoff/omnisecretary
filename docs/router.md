@@ -105,25 +105,31 @@ dig +short nedoletoff.sknt.ru
 Должен совпасть с WAN-IP. Если домен делегирован SkyNet — запись меняется
 в личном кабинете провайдера.
 
-## Шаг 7. HTTPS (Let's Encrypt)
+## Шаг 7. HTTPS — уже настроено
 
-Nginx уже отдаёт ACME-путь `/.well-known/acme-challenge/` из
-`nginx/www`. Выпуск сертификата (после шага 5):
+Сертификат Let's Encrypt выпущен 12.11.2026 для `nedoletoff.sknt.ru`
+(certbot в Docker, webroot `nginx/www`). HTTPS работает снаружи:
 
 ```bash
-sudo apt-get install -y certbot
-sudo certbot certonly --webroot \
-  -w /opt/omnisecretary/nginx/www \
-  -d nedoletoff.sknt.ru \
-  --email <ваш-email> --agree-tos --no-eff-email
+curl -s -o /dev/null -w '%{http_code}\n' https://nedoletoff.sknt.ru/healthz   # 200
 ```
 
-Затем в `nginx/conf.d/omnisecretary.conf` раскомментировать TLS-блок
-(сертификаты монтируются в контейнер из `/etc/letsencrypt`), выполнить
-`make restart-nginx` и проверить `https://nedoletoff.sknt.ru`.
+Конфиг — `nginx/conf.d/10-ssl.conf`, сертификаты — `/etc/letsencrypt`,
+смонтированы в контейнер `omni-nginx` read-only.
 
-Продление: `certbot renew` по таймеру (certbot ставит systemd-timer сам),
-после продления — `docker compose exec nginx nginx -s reload`.
+Продление (сертификат до 10.02.2027):
+
+```bash
+make renew-certs          # certbot renew + reload nginx
+```
+
+Автопродление — cron (от пользователя с sudo на docker):
+
+```cron
+17 3 * * * /opt/omnisecretary/scripts/renew-certs.sh >> /var/log/omni-certs.log 2>&1
+```
+
+Проверка: `sudo certbot certificates` (или `ls /etc/letsencrypt/live`).
 
 ### Telegram Mini App
 
