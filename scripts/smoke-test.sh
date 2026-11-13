@@ -82,6 +82,13 @@ check_http() {
 }
 
 check_http "nginx /healthz"  "http://127.0.0.1/healthz" "200"
+# .env должен читаться bash: незакавыченная «;» ломает все скрипты.
+if ( set -a; source .env ) >/dev/null 2>&1; then
+    pass ".env читается bash без ошибок"
+else
+    fail ".env содержит символы, ломающие source (проверить кавычки)"
+fi
+
 check_http "open-webui /health (через nginx)" "http://127.0.0.1/health" "200"
 check_http "open-webui /manifest.json (PWA)" "http://127.0.0.1/manifest.json" "200"
 
