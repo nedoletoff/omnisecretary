@@ -10,6 +10,8 @@
 #   ./scripts/backup.sh [--with-files] [--keep N]
 #
 set -Eeuo pipefail
+# Дампы содержат всю переписку: доступ только владельцу.
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh

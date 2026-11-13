@@ -41,8 +41,14 @@ PRESETS = ("secretary", "omni", "archivist", "coder", "private")
 
 app = FastAPI(title="OmniSecretary Portal", version="1.0")
 
-_rate_lock = threading.Lock()
-_rate: dict[str, list[float]] = {}
+# Таймауты на ввод пароля/токена: после 5 ошибок за 15 минут
+# ключ блокируется на 15 минут. Не лимит запросов, а пауза.
+_guard_lock = threading.Lock()
+_failures: dict[str, list[float]] = {}
+_blocked: dict[str, float] = {}
+FAIL_WINDOW = 15 * 60
+FAIL_LIMIT = 5
+FAIL_COOLDOWN = 15 * 60
 _admin_lock = threading.Lock()
 _admin_cache: dict[str, object] = {"token": "", "expires": 0.0}
 
@@ -115,15 +121,35 @@ def csrf_ok(value: str) -> bool:
         value, sign(f"csrf:{int(time.time()) // 3600 - 1}"))
 
 
-def rate_limited(ip: str) -> bool:
-    cutoff = time.time() - 3600
-    with _rate_lock:
-        attempts = [stamp for stamp in _rate.get(ip, []) if stamp > cutoff]
-        _rate[ip] = attempts
-        if len(attempts) >= 5:
-            return True
-        attempts.append(time.time())
-        return False
+def client_ip(request: Request) -> str:
+    """IP только из X-Real-IP: его ставит nginx, клиент его не подделает."""
+    return (request.headers.get("x-real-ip")
+            or (request.client.host if request.client else "")).strip()
+
+
+def guard_left(key: str) -> int:
+    """Сколько секунд осталось до конца таймаута (0 — можно пробовать)."""
+    now = time.time()
+    with _guard_lock:
+        until = _blocked.get(key, 0.0)
+        return max(0, int(until - now))
+
+
+def guard_fail(key: str) -> None:
+    now = time.time()
+    with _guard_lock:
+        attempts = [s for s in _failures.get(key, []) if s > now - FAIL_WINDOW]
+        attempts.append(now)
+        _failures[key] = attempts
+        if len(attempts) >= FAIL_LIMIT:
+            _blocked[key] = now + FAIL_COOLDOWN
+            _failures[key] = []
+
+
+def guard_reset(key: str) -> None:
+    with _guard_lock:
+        _failures.pop(key, None)
+        _blocked.pop(key, None)
 
 
 def esc(value: object) -> str:
@@ -270,12 +296,19 @@ def register_form(request: Request, message: str = "", error: int = 0):
 @app.post("/register", response_class=HTMLResponse)
 def register(request: Request, username: str = Form(""), password: str = Form(""),
              password2: str = Form(""), token: str = Form(""), csrf: str = Form("")):
-    ip = (request.headers.get("x-forwarded-for", "") or
-          (request.client.host if request.client else "")).split(",")[0].strip()
+    ip = client_ip(request)
+    key = f"reg:{ip}"
 
     def fail(text: str):
+        guard_fail(key)
         return HTMLResponse(page("Регистрация", "", text, True), status_code=400)
 
+    left = guard_left(key)
+    if left:
+        return HTMLResponse(
+            page("Регистрация", "",
+                 f"Слишком много ошибок. Повторите через {left // 60 + 1} мин.", True),
+            status_code=429)
     if not csrf_ok(csrf):
         return fail("Форма устарела — обновите страницу")
     username = username.strip().lower()
@@ -285,14 +318,14 @@ def register(request: Request, username: str = Form(""), password: str = Form(""
         return fail("Пароль должен быть не короче 8 символов")
     if password != password2:
         return fail("Пароли не совпадают")
-    if not INVITE_TOKEN or token.strip() != INVITE_TOKEN:
+    if not INVITE_TOKEN or not hmac.compare_digest(token.strip(), INVITE_TOKEN):
+        time.sleep(0.5)
         return fail("Неверный токен приглашения")
-    if rate_limited(ip):
-        return fail("Слишком много попыток. Попробуйте позже")
 
     owui_id, error = create_owui_user(username, password)
     if error:
         return fail(error)
+    guard_reset(key)
 
     conn = db()
     try:
@@ -326,11 +359,24 @@ def login_form(message: str = "", error: int = 0):
 
 
 @app.post("/login", response_class=HTMLResponse)
-def login(username: str = Form(""), password: str = Form("")):
+def login(request: Request, username: str = Form(""), password: str = Form("")):
     username = username.strip().lower()
+    key = f"login:{client_ip(request)}:{username}"
+    left = guard_left(key)
+    if left:
+        return HTMLResponse(
+            page("Вход", "",
+                 f"Слишком много неверных попыток. Подождите {left // 60 + 1} мин.", True),
+            status_code=429)
     token, owui_id, error = owui_login(username, password)
     if error:
+        time.sleep(0.5)
+        guard_fail(key)
+        left = guard_left(key)
+        if left:
+            error = f"Слишком много неверных попыток. Подождите {left // 60 + 1} мин."
         return HTMLResponse(page("Вход", "", error, True), status_code=400)
+    guard_reset(key)
 
     # Профиль мог быть создан в обход портала (например, админом).
     conn = db()

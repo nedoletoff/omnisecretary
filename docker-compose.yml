@@ -98,10 +98,14 @@ services:
 
       # ── Веб-сокеты и сессии (общие между вкладками и сервисами) ──
       WEBSOCKET_MANAGER: redis
-      WEBSOCKET_REDIS_URL: redis://redis:6379/0
+      WEBSOCKET_REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
 
       # ── Безопасность и доступ ──
       WEBUI_AUTH: "true"
+      # Только свой домен и LAN: без CORS «*».
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-https://nedoletoff.sknt.ru}
+      # Токен живёт 30 дней, а не вечно.
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-2592000}
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
       WEBUI_URL: ${WEBUI_URL}
       ENABLE_SIGNUP: "false"
@@ -164,6 +168,7 @@ services:
     networks:
       - frontend
       - backend
+      - mcp
     healthcheck:
       test:
         - CMD
@@ -262,12 +267,16 @@ services:
       - 64mb
       - --maxmemory-policy
       - allkeys-lru
+      - --requirepass
+      - ${REDIS_PASSWORD}
     volumes:
       - redis_data:/data
     networks:
       - backend
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 15s
       timeout: 5s
       retries: 6
@@ -340,6 +349,7 @@ services:
       # frontend — чтобы nginx мог проксировать; backend — доступ к postgres.
       - frontend
       - backend
+      - mcp
     # Healthcheck намеренно отсутствует: образ distroless (нет shell/curl),
     # а встроенная команда `vikunja healthcheck` прогоняет миграции при каждом
     # вызове. Доступность проверяет scripts/smoke-test.sh через nginx :8081.
@@ -409,6 +419,8 @@ services:
       retries: 3
       start_period: 10s
     mem_limit: 96m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -454,6 +466,8 @@ services:
     networks:
       - backend
     mem_limit: 96m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -478,7 +492,7 @@ services:
       - ${DATA_ROOT}/vault:/vault
       - ${DATA_ROOT}/vault-index:/index
       - ${DATA_ROOT}/secrets:/secrets:ro
-    networks: [backend]
+    networks: [mcp]
     healthcheck:
       test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
       interval: 30s
@@ -486,6 +500,8 @@ services:
       retries: 3
       start_period: 10s
     mem_limit: 128m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -501,7 +517,7 @@ services:
     volumes:
       - ./mcp/servers:/app/servers:ro
       - ${DATA_ROOT}/shared:/shared
-    networks: [backend]
+    networks: [mcp]
     healthcheck:
       test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
       interval: 30s
@@ -509,6 +525,8 @@ services:
       retries: 3
       start_period: 10s
     mem_limit: 64m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -523,7 +541,7 @@ services:
       MCP_PORT: "8000"
     volumes:
       - ./mcp/servers:/app/servers:ro
-    networks: [backend]
+    networks: [mcp]
     healthcheck:
       test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
       interval: 30s
@@ -531,6 +549,8 @@ services:
       retries: 3
       start_period: 10s
     mem_limit: 96m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -549,7 +569,7 @@ services:
       MCP_PORT: "8000"
     volumes:
       - ./mcp/servers:/app/servers:ro
-    networks: [backend]
+    networks: [mcp]
     healthcheck:
       test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
       interval: 30s
@@ -557,6 +577,8 @@ services:
       retries: 3
       start_period: 10s
     mem_limit: 64m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -582,6 +604,12 @@ services:
       retries: 3
       start_period: 10s
     mem_limit: 192m
+    pids_limit: 128
+    cpus: 1.0
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -612,6 +640,8 @@ services:
       retries: 3
       start_period: 10s
     mem_limit: 96m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -632,6 +662,8 @@ services:
       TZ: ${TZ:-UTC}
     networks: [backend]
     mem_limit: 320m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -650,6 +682,8 @@ services:
     networks: [backend]
     # torch + модель Silero: ~350 МБ в работе.
     mem_limit: 640m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -668,6 +702,8 @@ services:
       TZ: ${TZ:-UTC}
     networks: [backend]
     mem_limit: 192m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -703,6 +739,8 @@ services:
     networks:
       - backend
     mem_limit: 96m
+    cap_drop: [ALL]
+    cap_add: [DAC_OVERRIDE]
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
@@ -713,6 +751,10 @@ networks:
     driver: bridge
   # open-webui ↔ postgres/qdrant/redis. Наружу не выходит.
   backend:
+    driver: bridge
+  # open-webui ↔ MCP-серверы. Песочницы здесь нет: prompt injection
+  # из shell не должен дотянуться до GitHub-токена и вольта.
+  mcp:
     driver: bridge
 
 volumes:

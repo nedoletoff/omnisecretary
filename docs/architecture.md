@@ -29,11 +29,12 @@
 | Сеть | Кто в ней | Наружу |
 |---|---|---|
 | `frontend` | nginx, open-webui, vikunja, vault-manager, portal | nginx публикует 80/443/8081 |
-| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init, mcp-*, vpn | нет (Qdrant — только 127.0.0.1:6333, VPN-прокси — 127.0.0.1:2080) |
+| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init, mcp-sandbox, vpn, portal-боты | нет (Qdrant — только 127.0.0.1:6333, VPN-прокси — 127.0.0.1:2080) |
+| `mcp` | open-webui, vikunja, mcp-vault, mcp-files, mcp-github, mcp-vikunja | нет. Песочницы здесь нет — изоляция от токенов |
 
 nginx не имеет доступа к БД. Postgres/Qdrant/Redis не видны из LAN.
-Vikunja стоит в обеих сетях: nginx проксирует её через `frontend`,
-а к своей базе она ходит через `backend`.
+Vikunja стоит в трёх сетях: nginx проксирует её через `frontend`, к своей
+базе она ходит через `backend`, а MCP-сервер задач — через `mcp`.
 
 ## Порты
 
@@ -46,11 +47,11 @@ Vikunja стоит в обеих сетях: nginx проксирует её ч�
 | 2080 | VPN-прокси sing-box | `127.0.0.1` (HTTP CONNECT/SOCKS5) |
 | 8000 | portal (регистрация/настройки) | нет, только через nginx `/portal/` |
 | 5432 | PostgreSQL | только сеть `backend` |
-| 6379 | Redis | только сеть `backend` |
+| 6379 | Redis | только сеть `backend`, требуется пароль |
 | 8080 | Open WebUI | только сеть `frontend` |
 | 3456 | Vikunja | только внутри Docker-сетей |
 | — | Telegram-бот | исходящий long polling, входящих портов нет |
-| — | MCP-серверы | только сеть `backend` |
+| — | MCP-серверы | только сеть `mcp` |
 | — | vault-manager | через nginx по пути `/vault/`, Basic Auth |
 
 ## Тома

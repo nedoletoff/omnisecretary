@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -262,6 +263,26 @@ def db() -> sqlite3.Connection:
         """
     )
     return conn
+
+
+# Таймаут на ввод кода: после 5 ошибок — пауза 10 минут.
+_code_fails: dict[int, int] = {}
+_code_blocked: dict[int, float] = {}
+CODE_FAIL_LIMIT = 5
+CODE_COOLDOWN = 600
+
+
+def code_block_left(tg_id: int) -> int:
+    return max(0, int(_code_blocked.get(tg_id, 0.0) - time.time()))
+
+
+def code_fail(tg_id: int) -> None:
+    fails = _code_fails.get(tg_id, 0) + 1
+    if fails >= CODE_FAIL_LIMIT:
+        _code_blocked[tg_id] = time.time() + CODE_COOLDOWN
+        _code_fails[tg_id] = 0
+    else:
+        _code_fails[tg_id] = fails
 
 
 def is_allowed(tg_id: int) -> bool:
@@ -796,11 +817,20 @@ def poll_forever() -> None:
                      text.split()[0][:20] if text.startswith("/") else f"<{len(text)} симв.>")
             if not is_allowed(tg_id):
                 if OPEN_ACCESS and CONFIRM_CODE:
-                    if text == CONFIRM_CODE:
+                    left = code_block_left(tg_id)
+                    if left:
+                        send(chat_id, f"⏳ Слишком много попыток. "
+                                      f"Подождите {left // 60 + 1} мин.")
+                        continue
+                    if hmac.compare_digest(text, CONFIRM_CODE):
                         allow(tg_id)
+                        _code_fails.pop(tg_id, None)
+                        _code_blocked.pop(tg_id, None)
                         send(chat_id, "Доступ открыт. Напишите /help — покажу команды.")
                         log.info("доступ по коду: id=%s", tg_id)
                     else:
+                        code_fail(tg_id)
+                        time.sleep(1.0)
                         send(chat_id, "🔒 Это приватный ассистент. "
                                       "Отправьте код подтверждения.")
                     continue

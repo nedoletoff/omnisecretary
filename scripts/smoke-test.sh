@@ -85,6 +85,19 @@ check_http "nginx /healthz"  "http://127.0.0.1/healthz" "200"
 check_http "open-webui /health (через nginx)" "http://127.0.0.1/health" "200"
 check_http "open-webui /manifest.json (PWA)" "http://127.0.0.1/manifest.json" "200"
 
+# Внешний домен по HTTP обязан уходить на HTTPS, а не отдавать интерфейс.
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H 'Host: nedoletoff.sknt.ru' http://127.0.0.1/ 2>/dev/null || echo 000)"
+if [[ "$code" == "301" ]]; then
+    pass "http→https редирект (301)"
+else
+    fail "http→https редирект → HTTP $code (ожидался 301)"
+fi
+if curl -sI --max-time 10 https://nedoletoff.sknt.ru/ 2>/dev/null | grep -qi '^strict-transport-security'; then
+    pass "HSTS на HTTPS-ответе"
+else
+    fail "HSTS отсутствует"
+fi
+
 # ── 2b. Задачи (Vikunja) ─────────────────────────────────────
 if [[ "$QUIET" == "0" ]]; then
     printf '\n%sЗадачи (Vikunja)%s\n' "$C_BOLD" "$C_RESET"
@@ -219,7 +232,7 @@ if [[ "$voice_running" == "1" ]]; then
 fi
 
 # ── 5. Redis ─────────────────────────────────────────────────
-if [[ "$(compose exec -T redis redis-cli ping 2>/dev/null | tr -d '\r')" == "PONG" ]]; then
+if [[ "$(compose exec -T redis sh -c 'redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping' 2>/dev/null | tr -d '\r')" == "PONG" ]]; then
     pass "redis PING"
 else
     fail "redis PING"

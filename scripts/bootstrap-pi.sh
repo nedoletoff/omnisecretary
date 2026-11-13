@@ -239,6 +239,7 @@ setup_env() {
             if ! grep -q '^VAULT_ADMIN_PASSWORD=..*' "$ENV_FILE"; then
                 env_set VAULT_ADMIN_PASSWORD "$(gen_hex 16)"
     env_set PORTAL_SECRET "$(gen_hex 32)"
+    env_set REDIS_PASSWORD "$(gen_hex 24)"
                 log_info "Добавлен VAULT_ADMIN_PASSWORD в .env"
             fi
         fi
@@ -267,6 +268,7 @@ setup_env() {
     env_set VIKUNJA_PUBLIC_URL "http://${ip}:8081/"
     env_set VAULT_ADMIN_PASSWORD "$(gen_hex 16)"
     env_set PORTAL_SECRET "$(gen_hex 32)"
+    env_set REDIS_PASSWORD "$(gen_hex 24)"
 
     local host_tz="UTC"
     [[ -f /etc/timezone ]] && host_tz="$(cat /etc/timezone)"

@@ -24,6 +24,9 @@ ps: ## Статус контейнеров
 logs: ## Логи всех сервисов (Ctrl+C для выхода)
 	$(COMPOSE) logs -f --tail=100
 
+harden: ## Усилить хост: ufw + автообновления (нужен sudo)
+	sudo ./scripts/harden-host.sh
+
 smoke: ## Smoke-тест стека
 	./scripts/smoke-test.sh
 
@@ -146,4 +149,4 @@ renew-certs: ## Продлить сертификаты Let's Encrypt и пер�
 
 owner-creds: ## Показать логин и пароль владельца (секрет!)
 	@echo "Логин: admin"
-	@echo "Пароль: $$(grep '^PASSWORD=' $(DATA_ROOT)/secrets/webui-owner.txt | cut -d= -f2-)"
+	@echo "Пароль: $$(sudo grep '^PASSWORD=' $(DATA_ROOT)/secrets/webui-owner.txt | cut -d= -f2-)"
