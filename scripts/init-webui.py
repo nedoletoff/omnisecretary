@@ -112,7 +112,7 @@ def main() -> int:
     secrets_file = data_root / "secrets" / "webui-owner.txt"
 
     stored = read_secret(secrets_file)
-    email = env.get("WEBUI_ADMIN_EMAIL") or stored.get("EMAIL") or "owner@omnisecretary.local"
+    email = env.get("WEBUI_ADMIN_EMAIL") or stored.get("EMAIL") or "nedoletoff"
     password = env.get("WEBUI_ADMIN_PASSWORD") or stored.get("PASSWORD") or gen_password()
     name = env.get("WEBUI_ADMIN_NAME") or "Owner"
 

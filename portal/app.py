@@ -204,7 +204,7 @@ def secrets() -> tuple[str, str]:
         if "=" in line:
             key, value = line.split("=", 1)
             values[key.strip()] = value.strip()
-    return values.get("EMAIL", "admin"), values.get("PASSWORD", "")
+    return values.get("EMAIL", "nedoletoff"), values.get("PASSWORD", "")
 
 
 def admin_token() -> str:
@@ -249,13 +249,20 @@ def create_owui_user(username: str, password: str) -> tuple[str, str]:
 
 
 def owui_login(username: str, password: str) -> tuple[str, str, str]:
+    # Владелец входит по логину без домена (nedoletoff), остальные — по
+    # username@omnisecretary.local. Пробуем оба варианта, чтобы вход работал
+    # и для аккаунтов, созданных вручную в админке.
+    candidates = [username]
+    mapped = owui_email(username)
+    if mapped != username:
+        candidates.append(mapped)
     with httpx.Client(timeout=20) as client:
-        response = client.post(f"{OWUI_URL}/api/v1/auths/signin",
-                               json={"email": owui_email(username),
-                                     "password": password})
-    if response.status_code == 200:
-        data = response.json()
-        return data.get("token", ""), data.get("id", ""), ""
+        for email in candidates:
+            response = client.post(f"{OWUI_URL}/api/v1/auths/signin",
+                                   json={"email": email, "password": password})
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("token", ""), data.get("id", ""), ""
     return "", "", "Неверный логин или пароль"
 
 

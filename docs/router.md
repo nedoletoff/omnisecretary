@@ -123,7 +123,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://nedoletoff.sknt.ru/healthz   # 
 make renew-certs          # certbot renew + reload nginx
 ```
 
-Автопродление — cron (от пользователя с sudo на docker):
+Автопродление — cron (установлен в `/etc/cron.d/omnisecretary-renew`, лог `/srv/omnisecretary/logs/renew-certs.log`):
 
 ```cron
 17 3 * * * /opt/omnisecretary/scripts/renew-certs.sh >> /var/log/omni-certs.log 2>&1

@@ -3,9 +3,9 @@
 Self-hosted персональный AI-секретарь на Raspberry Pi 4 (4 ГБ ОЗУ).
 Один бэкенд — много окон: веб-интерфейс, Telegram, API, голос.
 
-Всё работает на своём железе. Тяжёлые вычисления (LLM, эмбеддинги) — в облаке
-через недорогие OpenAI-совместимые API; Pi отвечает за интерфейс, память,
-инструменты и голос.
+Всё работает на своём железе. LLM — в облаке через недорогие
+OpenAI-совместимые API; эмбеддинги для памяти считаются локально
+(`all-MiniLM-L6-v2`). Pi отвечает за интерфейс, память, инструменты и голос.
 
 ## Статус
 
@@ -47,7 +47,7 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 - Raspberry Pi 4 / 4 ГБ, Raspberry Pi OS Lite 64-bit (Debian 13) или Ubuntu Server 24.04 ARM64.
 - Диск данных: внешний HDD/SSD в `/mnt/data` (рекомендуется) либо SD-карта.
 - Docker Engine + Compose v2 (ставит `scripts/bootstrap-pi.sh`).
-- Ключи облачных OpenAI-совместимых API (LLM + эмбеддинги).
+- Ключ облачного OpenAI-совместимого API для LLM (эмбеддинги локальные).
 
 ## Быстрый старт
 
@@ -99,7 +99,7 @@ Obsidian, поиск, GitHub, голос, брифинг), соблюдает п
 
 ## Вход и регистрация
 
-**Администратор.** Логин `admin`. Пароль — в `secrets/webui-owner.txt`,
+**Администратор.** Логин `nedoletoff`. Пароль — в `secrets/webui-owner.txt`,
 посмотреть: `make owner-creds`.
 
 **Новые пользователи.** Публичная регистрация Open WebUI закрыта. Аккаунт
@@ -129,11 +129,9 @@ Obsidian, поиск, GitHub, голос, брифинг), соблюдает п
   и вольтом.
 - Redis с паролем, CORS ограничен доменом, токен Open WebUI живёт 30 дней.
 - Файлы с личными данными (`portal.db`, `bot.db`, бэкапы) — 600/700.
-- Усиление хоста (firewall + автообновления):
-
-  ```bash
-  sudo ./scripts/harden-host.sh    # спросит подтверждение по шагам
-  ```
+- Усиление хоста выполнено: UFW активен (22/80/443, 8081 — только LAN),
+  автообновления безопасности включены. Повторный запуск идемпотентен:
+  `sudo ./scripts/harden-host.sh`.
 
 Подробности и модель угроз — [docs/security.md](docs/security.md).
 
@@ -144,7 +142,7 @@ Obsidian, поиск, GitHub, голос, брифинг), соблюдает п
 ### 1. Веб-интерфейс
 
 - Адрес: **https://nedoletoff.sknt.ru** (в LAN: `http://192.168.0.133`).
-- Логин: **`admin`**. Поле подписано «Email», но принимает логин — почта не нужна.
+- Логин: **`nedoletoff`**. Поле подписано «Email», но принимает логин — почта не нужна.
 - Пароль:
 
   ```bash
@@ -190,19 +188,21 @@ Obsidian, поиск, GitHub, голос, брифинг), соблюдает п
 ### 5. Obsidian-вольт
 
 - Открыть **https://nedoletoff.sknt.ru/vault/**.
-- Логин `owner`, пароль — `VAULT_ADMIN_PASSWORD` из `.env`
-  (посмотреть: `grep VAULT_ADMIN_PASSWORD .env`).
-- Вставить URL приватного репозитория, ветку и PAT (Contents: read/write).
-  Токен сохранится в `secrets/vault-git-token` (600), в git не попадёт.
-- Доступ только у владельца; записи ИИ — в `AI/`, каждая с коммитом.
+- Логин `owner`, пароль — `secrets/vault-admin.txt` или `VAULT_ADMIN_PASSWORD`
+  в `.env`.
+- Уже подключён `nedoletoff/obsidian_vault`, ветка `main`
+  (`/vault/status` → `ready: true`). Сменить репозиторий можно той же формой.
+- Доступ только у владельца; записи ИИ — только в `AI/`, каждая с коммитом,
+  только по прямой просьбе.
 
 Подробно: [docs/obsidian.md](docs/obsidian.md).
 
 ### 6. Модель LLM
 
 - Сейчас подключена бесплатная Pollinations (`openai-fast`): 1 ответ в 45 с.
-- Для нормальной работы — платный OpenAI-совместимый провайдер: заменить
-  `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`, `EMBEDDING_*` в `.env`, затем
+- Память работает локально: эмбеддинги `all-MiniLM-L6-v2`, ключ не нужен.
+- Для нормальной скорости — платный OpenAI-совместимый провайдер: заменить
+  `OPENAI_API_BASE_URL`, `OPENAI_API_KEY` в `.env`, затем
   `make restart && make init-webui`.
 - Пресеты: Secretary, Omni, OmniSecretary, Archivist, Coder, Private.
 
@@ -246,7 +246,7 @@ make logs       # логи
 ```
 
 - Бэкапы, мониторинг, переезд на внешний диск — [docs/operations.md](docs/operations.md).
-- Усиление хоста (firewall + автообновления) — `sudo ./scripts/harden-host.sh`.
+- Усиление хоста выполнено (UFW + автообновления); повтор — `sudo ./scripts/harden-host.sh`.
 - Роутер, DNS, HTTPS, продление сертификата — [docs/router.md](docs/router.md).
 - VPN-прокси и выбор сервера — [docs/vpn.md](docs/vpn.md).
 
@@ -257,7 +257,7 @@ make logs       # логи
 | Пароль владельца Open WebUI | `/srv/omnisecretary/secrets/webui-owner.txt` (`make owner-creds`) |
 | Код приглашения (бот и регистрация) | `.env` → `TELEGRAM_CONFIRM_CODE`; `secrets/telegram-confirm-code.txt` |
 | Пароль Vikunja | `/srv/omnisecretary/secrets/vikunja-admin.txt` |
-| Пароль формы вольта | `.env` → `VAULT_ADMIN_PASSWORD` |
+| Пароль формы вольта | `secrets/vault-admin.txt`; `.env` → `VAULT_ADMIN_PASSWORD` |
 | API-ключ Open WebUI (для `make presets`) | `/srv/omnisecretary/secrets/webui-api-key.txt` |
 | GitHub PAT вольта | создаётся формой `/vault/` → `secrets/vault-git-token` |
 | Все секреты | `.env` (600, в git не попадает) |
@@ -355,10 +355,10 @@ make briefing-send   # отправить брифинг в Telegram
 
 ## Оптимизация под 4 ГБ ОЗУ
 - Локальные LLM на Pi не запускаются (`ENABLE_OLLAMA_API=false`).
-- Эмбеддинги — только облачные (`RAG_EMBEDDING_ENGINE=openai`).
+- Эмбеддинги — локальные `all-MiniLM-L6-v2` (`RAG_EMBEDDING_ENGINE=`), ~400 МБ ОЗУ, без ключа.
 - Векторы Qdrant хранятся на диске (`QDRANT_ON_DISK=true`).
 - `DATABASE_ENABLE_SESSION_SHARING=False`.
-- Лимиты памяти у каждого сервиса в `docker-compose.yml` (суммарно ~2,5 ГБ).
+- Лимиты памяти у каждого сервиса в `docker-compose.yml` (Open WebUI 2 ГБ, суммарно ~1,7 ГБ фактически).
 - Docker data-root и все тома — на диске данных, не на SD.
 - Логи Docker ограничены (10 МБ × 3 на контейнер).
 - Голос — отдельные контейнеры по профилю `voice`: STT ~200 МБ, TTS ~400 МБ

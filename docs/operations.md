@@ -138,7 +138,8 @@ make renew-certs       # продлить и перезагрузить nginx
 ```
 
 Сертификат `nedoletoff.sknt.ru` живёт в `/etc/letsencrypt/live/...` (смонтирован
-в nginx read-only). Автопродление — cron:
+в nginx read-only). Автопродление — cron (установлен в
+`/etc/cron.d/omnisecretary-renew`, лог `/srv/omnisecretary/logs/renew-certs.log`):
 
 ```cron
 17 3 * * * /opt/omnisecretary/scripts/renew-certs.sh >> /var/log/omni-certs.log 2>&1
