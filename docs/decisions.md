@@ -169,7 +169,9 @@ Let's Encrypt при наличии домена. Порты наружу не �
 ## ADR-013. Лимиты памяти в compose
 
 **Решение:** `mem_limit` у каждого сервиса (см. `docs/architecture.md`).
-Суммарный потолок ~2,3 ГБ при 3,7 ГБ ОЗУ.
+Потолки заданы по сервисам (Open WebUI 1,5 ГБ, Postgres 384 МБ, Qdrant
+512 МБ, остальные 32–640 МБ); фактическое потребление — около 1,7 ГБ
+при 3,7 ГБ ОЗУ и 2 ГБ swap.
 
 **Последствия:** при нехватке памяти контейнер будет убит OOM, а не утянет
 весь хост; диагностика — `docker stats`, `dmesg | grep -i oom`.
@@ -179,6 +181,8 @@ memory-cgroup. Если `/sys/fs/cgroup/cgroup.controllers` не содержи�
 Docker пишет «memory limit capabilities ... discarded» и лимиты игнорируются.
 Исправление: `scripts/enable-memory-cgroup.sh` (добавляет
 `cgroup_enable=memory cgroup_memory=1` в `/boot/firmware/cmdline.txt`) + ребут.
+**Выполнено 13.11.2026:** после перезагрузки `memory` есть в controllers,
+контейнеры пересозданы, `docker stats` показывает лимиты (`701 MiB / 1.5 GiB`).
 
 ---
 
@@ -279,7 +283,9 @@ Instance-admin в Vikunja 2.x — платная функция, для одно
 (с резервной копией) и требует перезагрузку. Идемпотентно.
 
 **Последствия:** без перезагрузки лимиты не работают — риск OOM на 4 ГБ.
-После ребута проверить `/sys/fs/cgroup/cgroup.controllers` (должен быть `memory`).
+Проверка после ребута: `/sys/fs/cgroup/cgroup.controllers` содержит `memory`,
+`docker inspect -f '{{.HostConfig.Memory}}' <контейнер>` больше нуля.
+**Статус: включено 13.11.2026**, все контейнеры пересозданы с лимитами.
 
 ---
 

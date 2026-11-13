@@ -179,7 +179,7 @@ services:
       timeout: 10s
       retries: 10
       start_period: 180s
-    mem_limit: 1280m
+    mem_limit: 1536m
     memswap_limit: 1536m
     security_opt:
       - no-new-privileges:true
