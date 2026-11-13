@@ -89,6 +89,29 @@ make mcp-build && make mcp-init
 изменение `/etc/docker/daemon.json`) спрашивают подтверждение; `--yes`
 отключает вопросы, `--dry-run` только печатает команды.
 
+## Вход и регистрация
+
+**Администратор.** Логин `admin`. Пароль — в `secrets/webui-owner.txt`,
+посмотреть: `make owner-creds`.
+
+**Новые пользователи.** Публичная регистрация Open WebUI закрыта. Аккаунт
+создаётся на портале:
+
+1. Открыть `https://nedoletoff.sknt.ru/register` (или `/portal/register`).
+2. Ввести логин (3–32 символа: латиница, цифры, `.`, `-`, `_`), пароль
+   дважды, затем **токен приглашения** — это `TELEGRAM_CONFIRM_CODE` из `.env`
+   (16 символов). Хотите отдельный токен — задайте `REGISTER_TOKEN`.
+3. После создания войти на `/portal/login` тем же логином и паролем —
+   портал откроет чат уже авторизованным.
+
+На странице `/portal/account` пользователь задаёт личные настройки: город для
+погоды, Telegram ID, GitHub-токен и пресет по умолчанию. История чатов у
+каждого своя: Open WebUI разделяет чаты по аккаунту, приватный режим ничего
+не сохраняет.
+
+Язык интерфейса по умолчанию — русский (`DEFAULT_LOCALE=ru-RU`), но это не
+жёстко: каждый может сменить в Settings → Interface.
+
 ## Ручные шаги после установки
 
 1. Открыть `https://nedoletoff.sknt.ru` (или `http://<ip-pi>` в LAN).
@@ -223,6 +246,7 @@ make briefing-send   # отправить брифинг в Telegram
 - [docs/proactive.md](docs/proactive.md) — утренний брифинг, PWA, ограничения.
 - [docs/operations.md](docs/operations.md) — эксплуатация, бэкапы, переезд на диск, мониторинг.
 - [docs/vpn.md](docs/vpn.md) — VPN-прокси, выбор Auto-сервера, трафик
+- [docs/portal.md](docs/portal.md) — регистрация по токену, вход, личные настройки
 - [docs/telegram.md](docs/telegram.md) — бот, allowlist, код подтверждения, Mini App.
 - [docs/search.md](docs/search.md) — веб-поиск для моделей, движки, экономия токенов.
 - [docs/router.md](docs/router.md) — проброс портов, DNS, HTTPS, Telegram Mini App.

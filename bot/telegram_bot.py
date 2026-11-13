@@ -791,7 +791,9 @@ def poll_forever() -> None:
             chat_id = (message.get("chat") or {}).get("id")
             if not tg_id or not chat_id or not text:
                 continue
-            log.info("сообщение id=%s: %s", tg_id, text[:60])
+            # Не логируем текст целиком: там могут быть коды и токены.
+            log.info("сообщение id=%s: %s", tg_id,
+                     text.split()[0][:20] if text.startswith("/") else f"<{len(text)} симв.>")
             if not is_allowed(tg_id):
                 if OPEN_ACCESS and CONFIRM_CODE:
                     if text == CONFIRM_CODE:

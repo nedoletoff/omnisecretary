@@ -200,6 +200,7 @@ create_directories() {
         "$DATA_ROOT"/bot \
         "$DATA_ROOT"/secrets \
         "$DATA_ROOT"/vpn \
+        "$DATA_ROOT"/portal \
         "$DATA_ROOT"/logs
 
     # Владельцы под UID внутри образов (иначе контейнер не запишет данные).
@@ -208,7 +209,7 @@ create_directories() {
     # Остальное — текущему пользователю (бэкапы, вольт, логи).
     run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/backups "$DATA_ROOT"/vault \
         "$DATA_ROOT"/vault-index "$DATA_ROOT"/shared "$DATA_ROOT"/sandbox \
-        "$DATA_ROOT"/bot "$DATA_ROOT"/secrets "$DATA_ROOT"/logs
+        "$DATA_ROOT"/bot "$DATA_ROOT"/secrets "$DATA_ROOT"/logs "$DATA_ROOT"/portal
     # VPN-конфиг содержит ключи — только владельцу.
     run sudo chown -R "$(id -u):$(id -g)" "$DATA_ROOT"/vpn
     run sudo chmod 700 "$DATA_ROOT"/vpn
@@ -237,6 +238,7 @@ setup_env() {
             fi
             if ! grep -q '^VAULT_ADMIN_PASSWORD=..*' "$ENV_FILE"; then
                 env_set VAULT_ADMIN_PASSWORD "$(gen_hex 16)"
+    env_set PORTAL_SECRET "$(gen_hex 32)"
                 log_info "Добавлен VAULT_ADMIN_PASSWORD в .env"
             fi
         fi
@@ -264,6 +266,7 @@ setup_env() {
     env_set VIKUNJA_SECRET "$(gen_hex 32)"
     env_set VIKUNJA_PUBLIC_URL "http://${ip}:8081/"
     env_set VAULT_ADMIN_PASSWORD "$(gen_hex 16)"
+    env_set PORTAL_SECRET "$(gen_hex 32)"
 
     local host_tz="UTC"
     [[ -f /etc/timezone ]] && host_tz="$(cat /etc/timezone)"

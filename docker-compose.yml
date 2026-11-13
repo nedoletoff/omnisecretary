@@ -5,7 +5,7 @@
 #
 # Профиль памяти рассчитан на Raspberry Pi 4 / 4 ГБ:
 #   nginx 32M + open-webui 1280M + postgres 384M + qdrant 512M + redis 64M
-#   + vikunja 192M
+#   + vikunja 192M + portal 96M
 #
 # Запуск: make up  (или docker compose up -d)
 
@@ -365,6 +365,47 @@ services:
     ports:
       # Только localhost — для проверок и мониторинга с хоста.
       - "127.0.0.1:2080:2080"
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+  # ─────────────────────────────────────────────────────────────
+  # Портал: регистрация по инвайт-токену, вход по логину и личные
+  # настройки (город, GitHub-токен, пресет). Аккаунты создаются в
+  # Open WebUI через админский API — один бэкенд, одни чаты.
+  # ─────────────────────────────────────────────────────────────
+  portal:
+    image: omnisecretary-mcp:local
+    container_name: omni-portal
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000",
+              "--app-dir", "/app/portal"]
+    restart: unless-stopped
+    depends_on:
+      open-webui:
+        condition: service_healthy
+    environment:
+      OWUI_URL: http://open-webui:8080
+      SECRETS_DIR: /secrets
+      PORTAL_DATA: /data
+      BOT_DB_PATH: /bot/bot.db
+      PORTAL_SECRET: ${PORTAL_SECRET:-}
+      REGISTER_TOKEN: ${REGISTER_TOKEN:-}
+      TELEGRAM_CONFIRM_CODE: ${TELEGRAM_CONFIRM_CODE:-}
+      WEATHER_CITY: ${WEATHER_CITY:-}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./portal:/app/portal:ro
+      - ${DATA_ROOT}/portal:/data
+      - ${DATA_ROOT}/secrets:/secrets:ro
+      - ${DATA_ROOT}/bot:/bot
+    networks: [frontend]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     mem_limit: 96m
     security_opt:
       - no-new-privileges:true

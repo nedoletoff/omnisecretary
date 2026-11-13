@@ -160,6 +160,8 @@ if [[ "$QUIET" == "0" ]]; then
 fi
 check_http "vault-manager /healthz" "http://127.0.0.1/vault/healthz" "200"
 check_http "vault-manager /vault/ (без авторизации)" "http://127.0.0.1/vault/" "401"
+check_http "portal /healthz" "http://127.0.0.1/portal/healthz" "200"
+check_http "portal /register" "http://127.0.0.1/portal/register" "200"
 
 if [[ -f "$API_KEY_FILE" ]]; then
     api_key="$(grep -m1 '^WEBUI_API_KEY=' "$API_KEY_FILE" | cut -d= -f2-)"

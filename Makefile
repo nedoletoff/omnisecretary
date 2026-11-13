@@ -107,6 +107,12 @@ briefing-send: ## Собрать и отправить брифинг в Telegra
 proactive-logs: ## Логи планировщика
 	$(COMPOSE) --profile proactive logs -f --tail=50 proactive
 
+portal-logs: ## Логи портала (регистрация/настройки)
+	$(COMPOSE) logs -f --tail=50 portal
+
+portal-up: ## Запустить/пересоздать портал
+	$(COMPOSE) up -d --force-recreate portal
+
 vpn-config: ## Сгенерировать конфиг VPN из подписки (быстрый Auto-сервер)
 	python3 scripts/vpn-config.py
 
