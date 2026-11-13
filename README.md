@@ -241,7 +241,7 @@ make proactive-up   # включить ежедневную отправку
 
 ```bash
 make ps         # статус контейнеров
-make smoke      # 43 проверки: сервисы, HTTP, БД, модели, MCP, голос
+make smoke      # 44 проверки: сервисы, HTTP, БД, модели, MCP, голос
 make logs       # логи
 ```
 
