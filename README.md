@@ -13,10 +13,10 @@ Self-hosted персональный AI-секретарь на Raspberry Pi 4 (
 |---|---|---|
 | 1 | Ядро: Open WebUI + PostgreSQL + Qdrant + Redis + Nginx, скрипты | ✅ реализовано |
 | 2 | Календарь Open WebUI, задачи (Vikunja), пресеты-«лица» | ✅ реализовано |
-| 3 | Telegram-бот, allowlist, код подтверждения, Mini App | ✅ бот @nd_omnisecretarybot работает через VPN |
+| 3 | Telegram-бот, allowlist, код подтверждения, Mini App | ✅ @nd_omnisecretarybot работает через VPN |
 | 4 | MCP: Obsidian, GitHub, Filesystem, песочница, Vikunja | ✅ реализовано |
 | 5 | Голос: Vosk-модель (sherpa-onnx) + Silero TTS, Piper как альтернатива | ✅ запущено и проверено |
-| 6 | Проактивность: утренний брифинг, напоминания, PWA | ✅ брифинг собирается (отправка в Telegram ждёт доступного API) |
+| 6 | Проактивность: утренний брифинг, напоминания, PWA | ✅ брифинг отправляется в Telegram |
 | 7 | Эксплуатация: HTTPS, бэкапы, мониторинг, напоминания | ✅ HTTPS выпущен и работает |
 | 8 | VPN-прокси для заблокированных сервисов (Telegram) | ✅ работает (`make vpn-test`) |
 
@@ -137,57 +137,160 @@ Obsidian, поиск, GitHub, голос, брифинг), соблюдает п
 
 Подробности и модель угроз — [docs/security.md](docs/security.md).
 
-## Ручные шаги после установки
+## Первый вход и начало работы
 
-1. Открыть `https://nedoletoff.sknt.ru` (или `http://<ip-pi>` в LAN).
-   **Логин `admin`**, пароль — в `/srv/omnisecretary/secrets/webui-owner.txt`:
+Всё уже запущено. Ниже — что открыть и где взять доступы.
 
-   ```bash
-   cat /srv/omnisecretary/secrets/webui-owner.txt
-   ```
+### 1. Веб-интерфейс
 
-   Поле входа подписано «Email», но принимает логин `admin` — почта не нужна.
-   Сменить пароль: Settings → Account. Если пароль потерян — сброс в Admin
-   Panel → Users (владелец) или `make init-webui` (пересоздаст учётку).
-2. Провайдер LLM уже настроен из `.env` (`make init-webui`). Для продакшна
-   заменить `OPENAI_API_BASE_URL`/`OPENAI_API_KEY` и выполнить
-   `make restart && make init-webui`.
-3. Admin Panel → Settings → убедиться, что регистрация закрыта (`ENABLE_SIGNUP=false`).
-4. Создать остальных пользователей вручную (Admin Panel → Users).
-   У каждого свои чаты, память и файлы — данные не пересекаются.
-5. Задачи: `make vikunja-admin`, войти на `http://<ip-pi>:8081`, сменить пароль
-   и удалить файл `/srv/omnisecretary/secrets/vikunja-admin.txt`.
-6. Пресеты уже импортированы (`make init-webui`). Повторный импорт:
-   `WEBUI_API_KEY=$(cat ${DATA_ROOT}/secrets/webui-api-key.txt | cut -d= -f2) make presets ARGS="--base-model openai-fast"`.
-7. **Obsidian-вольт**: открыть `http://<ip-pi>/vault/` (логин `owner`,
-   пароль — `VAULT_ADMIN_PASSWORD` из `.env`), ввести URL приватного
-   репозитория, ветку и PAT (`Contents: read/write`). Подробно —
-   [docs/obsidian.md](docs/obsidian.md).
-8. **GitHub**: вписать fine-grained PAT в `GITHUB_TOKEN` (`.env`), затем
-   `make restart`. Права — [docs/mcp.md](docs/mcp.md).
-9. Тема Gruvbox подключена автоматически; в Settings → Interface выберите Dark.
-10. **Telegram**: получить токен у @BotFather, вписать в `.env`
-    `TELEGRAM_BOT_TOKEN`, `TELEGRAM_OWNER_ID` (ваш числовой ID) и
-    `TELEGRAM_ALLOWED_IDS` (только вы), затем `make tg-up`.
-    Публичная регистрация и посторонние в боте запрещены — [docs/telegram.md](docs/telegram.md).
-11. **Брифинг**: вписать `WEATHER_LAT`/`WEATHER_LON` своего города,
-    проверить `make briefing`, затем `make proactive-up`.
-    Напоминания в боте: `/remind 20:30 текст`.
-12. **Голос**: `make voice-up`, в чате нажать микрофон. Если нужен лёгкий
-    вариант — `make voice-piper` и `AUDIO_TTS_OPENAI_API_BASE_URL=http://tts-piper:8000/v1`.
-13. **Перезагрузка** для memory-cgroup (параметры ядра уже прописаны):
-    `sudo reboot`, после — `make smoke`.
-14. Проверить `make smoke` (33 проверки).
-15. Настроить бэкапы и health-alert по таймеру — [docs/operations.md](docs/operations.md).
-16. Когда появится внешний диск — перенести `${DATA_ROOT}` по инструкции
-    [docs/operations.md](docs/operations.md#переезд-на-внешний-диск).
+- Адрес: **https://nedoletoff.sknt.ru** (в LAN: `http://192.168.0.133`).
+- Логин: **`admin`**. Поле подписано «Email», но принимает логин — почта не нужна.
+- Пароль:
+
+  ```bash
+  make owner-creds
+  # или: cat /srv/omnisecretary/secrets/webui-owner.txt
+  ```
+
+- Сменить пароль: Settings → Account. Потеряли — Admin Panel → Users
+  или `make init-webui` (пересоздаст учётку владельца).
+
+### 2. Регистрация новых пользователей
+
+1. Открыть **https://nedoletoff.sknt.ru/register**.
+2. Логин (3–32 символа), пароль дважды, **токен приглашения**.
+3. Токен — `TELEGRAM_CONFIRM_CODE` в `.env`, он же в
+   `/srv/omnisecretary/secrets/telegram-confirm-code.txt` (16 символов).
+4. Вход — `/portal/login`; личные настройки (город, Telegram ID, GitHub-токен,
+   пресет) — `/portal/account`.
+
+Подробно: [docs/portal.md](docs/portal.md).
+
+### 3. Telegram
+
+- Бот: **@nd_omnisecretarybot** (работает через VPN-прокси).
+- Нажать Start → бот попросит код подтверждения → отправить код из
+  `secrets/telegram-confirm-code.txt`. Доступ сохраняется навсегда.
+- Команды: `/app` — веб-интерфейс внутри Telegram, `/weather` — погода,
+  `/new`, `/preset`, `/remind 20:30 текст`, `/users` (только владелец).
+- Владелец: `TELEGRAM_OWNER_ID=278466638`; посторонние без кода не пускаются.
+
+Подробно: [docs/telegram.md](docs/telegram.md).
+
+### 4. Задачи (Vikunja)
+
+- Адрес: **http://192.168.0.133:8081** (наружу не пробрасывается).
+- Логин `admin`, пароль — `/srv/omnisecretary/secrets/vikunja-admin.txt`.
+  Смените пароль в интерфейсе и удалите файл.
+- CalDAV для телефона: `http://192.168.0.133:8081/dav/`.
+- Календарь событий — раздел «Календарь» в Open WebUI.
+
+Подробно: [docs/calendar-tasks.md](docs/calendar-tasks.md).
+
+### 5. Obsidian-вольт
+
+- Открыть **https://nedoletoff.sknt.ru/vault/**.
+- Логин `owner`, пароль — `VAULT_ADMIN_PASSWORD` из `.env`
+  (посмотреть: `grep VAULT_ADMIN_PASSWORD .env`).
+- Вставить URL приватного репозитория, ветку и PAT (Contents: read/write).
+  Токен сохранится в `secrets/vault-git-token` (600), в git не попадёт.
+- Доступ только у владельца; записи ИИ — в `AI/`, каждая с коммитом.
+
+Подробно: [docs/obsidian.md](docs/obsidian.md).
+
+### 6. Модель LLM
+
+- Сейчас подключена бесплатная Pollinations (`openai-fast`): 1 ответ в 45 с.
+- Для нормальной работы — платный OpenAI-совместимый провайдер: заменить
+  `OPENAI_API_BASE_URL`, `OPENAI_API_KEY`, `EMBEDDING_*` в `.env`, затем
+  `make restart && make init-webui`.
+- Пресеты: Secretary, Omni, OmniSecretary, Archivist, Coder, Private.
+
+Подробно: [docs/mcp.md](docs/mcp.md), [docs/architecture.md](docs/architecture.md).
+
+### 7. Погода и локация
+
+- По умолчанию: Санкт-Петербург, Ломоносовская (`WEATHER_LAT`/`WEATHER_LON`).
+- Своя локация: `/weather Казань` в боте или поле «Город» на `/portal/account`.
+
+### 8. Голос
+
+```bash
+make voice-up     # STT sherpa-onnx (русский) + TTS Silero
+```
+
+В чате — микрофон и кнопка озвучки. Альтернатива: `make voice-piper`.
+
+Подробно: [docs/voice.md](docs/voice.md).
+
+### 9. Брифинг и напоминания
+
+```bash
+make briefing       # собрать и отправить сейчас
+make proactive-up   # включить ежедневную отправку
+```
+
+Подробно: [docs/proactive.md](docs/proactive.md).
+
+### 10. Веб-поиск
+
+Включён для Secretary, Omni, OmniSecretary, Archivist (DuckDuckGo, без ключа).
+Отключён для Coder и Private. Смена движка — [docs/search.md](docs/search.md).
+
+### 11. Проверка и эксплуатация
+
+```bash
+make ps         # статус контейнеров
+make smoke      # 43 проверки: сервисы, HTTP, БД, модели, MCP, голос
+make logs       # логи
+```
+
+- Бэкапы, мониторинг, переезд на внешний диск — [docs/operations.md](docs/operations.md).
+- Усиление хоста (firewall + автообновления) — `sudo ./scripts/harden-host.sh`.
+- Роутер, DNS, HTTPS, продление сертификата — [docs/router.md](docs/router.md).
+- VPN-прокси и выбор сервера — [docs/vpn.md](docs/vpn.md).
+
+### 12. Где лежат доступы
+
+| Что | Где |
+|---|---|
+| Пароль владельца Open WebUI | `/srv/omnisecretary/secrets/webui-owner.txt` (`make owner-creds`) |
+| Код приглашения (бот и регистрация) | `.env` → `TELEGRAM_CONFIRM_CODE`; `secrets/telegram-confirm-code.txt` |
+| Пароль Vikunja | `/srv/omnisecretary/secrets/vikunja-admin.txt` |
+| Пароль формы вольта | `.env` → `VAULT_ADMIN_PASSWORD` |
+| API-ключ Open WebUI (для `make presets`) | `/srv/omnisecretary/secrets/webui-api-key.txt` |
+| GitHub PAT вольта | создаётся формой `/vault/` → `secrets/vault-git-token` |
+| Все секреты | `.env` (600, в git не попадает) |
+| Данные | `/srv/omnisecretary` (`DATA_ROOT`) |
+
+## Документация: что где лежит
+
+| Документ | О чём |
+|---|---|
+| [docs/architecture.md](docs/architecture.md) | сервисы, сети, порты, тома, потоки данных |
+| [docs/security.md](docs/security.md) | секреты, доступы, таймауты, модель угроз |
+| [docs/portal.md](docs/portal.md) | регистрация по токену, вход, личные настройки |
+| [docs/telegram.md](docs/telegram.md) | бот, allowlist, код, Mini App |
+| [docs/calendar-tasks.md](docs/calendar-tasks.md) | календарь, Vikunja, CalDAV, пресеты |
+| [docs/obsidian.md](docs/obsidian.md) | вольт: подключение, инструменты, правила записи |
+| [docs/mcp.md](docs/mcp.md) | MCP-серверы, права, песочница |
+| [docs/voice.md](docs/voice.md) | русский STT и TTS |
+| [docs/proactive.md](docs/proactive.md) | брифинг, напоминания, PWA |
+| [docs/search.md](docs/search.md) | веб-поиск, движки, экономия токенов |
+| [docs/router.md](docs/router.md) | роутер, порты, DNS, HTTPS, сертификаты |
+| [docs/vpn.md](docs/vpn.md) | VPN-прокси, выбор сервера, трафик |
+| [docs/operations.md](docs/operations.md) | бэкапы, обновления, переезд на диск |
+| [docs/decisions.md](docs/decisions.md) | принятые решения и допущения (ADR) |
+| [docs/plan.md](docs/plan.md) | этапы и критерии перехода |
+| [docs/acceptance.md](docs/acceptance.md) | критерии готовности из ТЗ |
+| [AGENTS.md](AGENTS.md) | правила для AI-агентов |
 
 ## Порты
 
 | Порт | Кто слушает | Доступ |
 |---|---|---|
-| 80 | nginx | LAN / Cloudflare Tunnel |
-| 443 | nginx | LAN, при настроенном TLS |
+| 80 | nginx | редирект на HTTPS (кроме ACME и /healthz) |
+| 443 | nginx | LAN и интернет, Let's Encrypt |
 | 8081 | nginx → Vikunja | LAN, наружу не пробрасывать |
 | 6333 | Qdrant | только `127.0.0.1` (бэкапы, диагностика) |
 | 5432 | PostgreSQL | только внутри `backend` |
