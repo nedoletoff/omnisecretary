@@ -138,7 +138,9 @@ services:
 
       # ── Прочее ──
       WEBUI_NAME: "OmniSecretary"
-      DEFAULT_LOCALE: "ru-RU"
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-ru-RU}
+      # Модели, видимые по умолчанию; первая — основная (OmniSecretary).
+      DEFAULT_MODELS: ${DEFAULT_MODELS:-}
       GLOBAL_LOG_LEVEL: "INFO"
       # Веб-поиск: DuckDuckGo через ddgs (проверен с Pi, ~10 с на запрос).
       # Модели с capabilities.web_search=true получают поиск в чате.

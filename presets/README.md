@@ -11,6 +11,7 @@
 | `archivist.md` | Archivist | Obsidian-вольт: поиск и запись | Obsidian |
 | `coder.md` | Coder | код, git, GitHub, песочница | GitHub, Sandbox, Files |
 | `private.md` | Private | без памяти, истории и инструментов | — |
+| `omnisecretary.md` | OmniSecretary | основной ассистент: знает, что живёт в OmniSecretary, умеет всё и помогает с настройкой | Vikunja, Files, Obsidian |
 
 ## Формат файла
 
@@ -29,6 +30,11 @@ tools: vikunja, files     # имена MCP-серверов → server:mcp:<им
 
 <системный промпт>
 ```
+
+Системный промпт попадает в `params.system` модели — именно оттуда его
+читает Open WebUI. Импорт дополнительно применяет промпт `omnisecretary.md`
+к самой базовой модели: если пользователь выберет её вместо пресета,
+ассистент всё равно будет знать, что он OmniSecretary.
 
 ## Импорт
 

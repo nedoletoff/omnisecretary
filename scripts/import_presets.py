@@ -89,6 +89,9 @@ def parse_preset(path: Path) -> dict:
 
     capabilities = {k: bool(meta[k]) for k in CAPABILITY_KEYS if k in meta}
     params: dict[str, object] = {}
+    # Системный промпт живёт в params.system: именно оттуда его берёт
+    # фронтенд Open WebUI (meta.system нигде не применяется).
+    params["system"] = body
     if "temperature" in meta:
         params["temperature"] = meta["temperature"]
     # legacy включает RAG-поиск (features.web_search) для моделей без tool calling
@@ -109,7 +112,6 @@ def parse_preset(path: Path) -> dict:
         "name": meta["name"],
         "meta": {
             "description": meta.get("description", ""),
-            "system": body,
             "capabilities": capabilities,
             "toolIds": tool_ids,
         },
@@ -190,6 +192,42 @@ def apply_model_fields(api_url: str, api_key: str, models: list[dict]) -> None:
                 f"Обновление {model['id']}: HTTP {exc.code}: {detail[:300]}") from exc
 
 
+def apply_base_persona(api_url: str, api_key: str, base_model: str,
+                       models: list[dict]) -> None:
+    """Персонаж OmniSecretary для самой базовой модели.
+
+    Пользователь может выбрать в списке не пресет, а базовую модель —
+    тогда без этого шага ассистент считает себя обычным чатом.
+    """
+    persona = next((m for m in models if m["id"] == "omnisecretary"), None)
+    if not persona:
+        print("[warn] пресет omnisecretary не найден — базовая модель без персонажа")
+        return
+    payload = json.dumps({
+        "id": base_model,
+        "name": base_model,
+        "params": {"temperature": persona.get("params", {}).get("temperature", 0.5),
+                   "system": persona["params"]["system"],
+                   "function_calling": "legacy"},
+        "meta": {
+            "description": "Базовый чат OmniSecretary: тот же ассистент без пресета.",
+            "capabilities": persona["meta"].get("capabilities", {}),
+        },
+    }).encode("utf-8")
+    url = api_url.rstrip("/") + "/api/v1/models/model/update?id=" + base_model
+    request = urllib.request.Request(
+        url, data=payload, method="POST",
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {api_key}"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            response.read()
+        print(f"[ok] персонаж OmniSecretary применён к базовой модели {base_model}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")
+        print(f"[warn] базовая модель {base_model}: HTTP {exc.code} {detail[:200]}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Импорт пресетов OmniSecretary")
     parser.add_argument(
@@ -206,6 +244,11 @@ def main() -> int:
         "--api-key",
         default=os.environ.get("WEBUI_API_KEY", ""),
         help="API-ключ Open WebUI (или переменная WEBUI_API_KEY)",
+    )
+    parser.add_argument(
+        "--no-base-persona",
+        action="store_true",
+        help="не применять персонаж OmniSecretary к базовой модели",
     )
     parser.add_argument(
         "--dry-run",
@@ -244,6 +287,8 @@ def main() -> int:
 
     post_import(api_url, args.api_key, models)
     apply_model_fields(api_url, args.api_key, models)
+    if base_model and not args.no_base_persona:
+        apply_base_persona(api_url, args.api_key, base_model, models)
     print(f"Готово: {len(models)} пресетов.")
     return 0
 
