@@ -16,6 +16,15 @@ from mcp.server.fastmcp import FastMCP
 
 TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
 API = "https://api.github.com"
+# Запись (файлы, issues, PR) по умолчанию выключена: включение — осознанное
+# действие владельца. Чтение работает всегда.
+WRITE_ENABLED = os.environ.get("GITHUB_WRITE_ENABLED", "false").lower() in (
+    "1", "true", "yes", "on")
+
+
+def _write_denied() -> str:
+    return ("Запись в GitHub отключена. Включить: GITHUB_WRITE_ENABLED=true "
+            "в .env и make restart.")
 
 mcp = FastMCP(
     "github",
@@ -86,6 +95,8 @@ def gh_read_file(repo: str, path: str, ref: str = "") -> str:
 @mcp.tool()
 def gh_write_file(repo: str, path: str, content: str, message: str, branch: str = "") -> str:
     """Создать или обновить файл и сделать коммит."""
+    if not WRITE_ENABLED:
+        return _write_denied()
     if not TOKEN:
         return "GITHUB_TOKEN не задан"
     with _client() as client:
@@ -125,6 +136,8 @@ def gh_list_issues(repo: str, state: str = "open", limit: int = 20) -> str:
 @mcp.tool()
 def gh_create_issue(repo: str, title: str, body: str = "") -> str:
     """Создать issue."""
+    if not WRITE_ENABLED:
+        return _write_denied()
     if not TOKEN:
         return "GITHUB_TOKEN не задан"
     with _client() as client:
@@ -137,6 +150,8 @@ def gh_create_issue(repo: str, title: str, body: str = "") -> str:
 @mcp.tool()
 def gh_create_pr(repo: str, title: str, head: str, base: str, body: str = "") -> str:
     """Создать pull request из head в base."""
+    if not WRITE_ENABLED:
+        return _write_denied()
     if not TOKEN:
         return "GITHUB_TOKEN не задан"
     with _client() as client:

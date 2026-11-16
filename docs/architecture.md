@@ -44,7 +44,7 @@ Vikunja стоит в трёх сетях: nginx проксирует её че�
 | 443 | nginx | `0.0.0.0` |
 | 8081 | nginx → Vikunja | `0.0.0.0` (только LAN, наружу не пробрасывать) |
 | 6333 | Qdrant | `127.0.0.1` (snapshot API для бэкапов) |
-| 2080 | VPN-прокси sing-box | `127.0.0.1` (HTTP CONNECT/SOCKS5) |
+| 2080/2081 | VPN-прокси Xray | `127.0.0.1` (HTTP CONNECT / SOCKS5) |
 | 8000 | portal (регистрация/настройки) | нет, только через nginx `/portal/` |
 | 5432 | PostgreSQL | только сеть `backend` |
 | 6379 | Redis | только сеть `backend`, требуется пароль |

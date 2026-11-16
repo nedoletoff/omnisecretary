@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Генерирует конфиг sing-box из подписки VPN (vless).
+"""Генерирует конфиг Xray-core из подписки VPN (vless).
 
 Правила выбора сервера:
 - только обычные «Auto» серверы;
@@ -27,8 +27,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 EXCLUDE = ("ai", "нейро", "белые", "whitelist", "white list", "торрент",
            "torrent", "youtube", "ютуб", "госуслуги", "gosuslugi")
-# sing-box не умеет XHTTP; такие Auto-серверы пропускаем.
-SUPPORTED_NET = {"tcp", "ws", "grpc", "http", "h2"}
+# Xray умеет ws/xhttp/grpc/tcp; остальные транспорты пропускаем.
+SUPPORTED_NET = {"tcp", "ws", "grpc", "http", "h2", "xhttp"}
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -68,54 +68,81 @@ def is_regular_auto(name: str) -> bool:
 def parse_vless(link: str) -> dict:
     parts = urllib.parse.urlsplit(link)
     query = dict(urllib.parse.parse_qsl(parts.query))
-    name = urllib.parse.unquote(parts.fragment or "")
-    host = parts.hostname or ""
-    port = parts.port or 443
-    uuid = urllib.parse.unquote(parts.username or "")
-
-    tls: dict = {}
-    security = (query.get("security") or "none").lower()
-    if security in ("tls", "reality"):
-        tls = {"enabled": True, "server_name": query.get("sni") or host}
-        fingerprint = query.get("fp") or "chrome"
-        tls["utls"] = {"enabled": True, "fingerprint": fingerprint}
-        if security == "reality":
-            tls["reality"] = {
-                "enabled": True,
-                "public_key": query.get("pbk", ""),
-                "short_id": query.get("sid", ""),
-            }
-        alpn = query.get("alpn")
-        if alpn:
-            tls["alpn"] = [item for item in alpn.split(",") if item]
-
-    transport: dict | None = None
-    net = (query.get("type") or "tcp").lower()
-    if net == "ws":
-        transport = {"type": "ws", "path": query.get("path") or "/"}
-        host_header = query.get("host")
-        if host_header:
-            transport["headers"] = {"Host": host_header}
-    elif net == "grpc":
-        transport = {"type": "grpc", "service_name": query.get("serviceName") or ""}
-    elif net in ("http", "h2"):
-        transport = {"type": "http", "path": query.get("path") or "/"}
-
-    outbound = {
-        "type": "vless",
-        "tag": "proxy",
-        "server": host,
-        "server_port": port,
-        "uuid": uuid,
+    return {
+        "name": urllib.parse.unquote(parts.fragment or ""),
+        "host": parts.hostname or "",
+        "port": parts.port or 443,
+        "uuid": urllib.parse.unquote(parts.username or ""),
+        "net": (query.get("type") or "tcp").lower(),
+        "security": (query.get("security") or "none").lower(),
+        "sni": query.get("sni") or "",
+        "fp": query.get("fp") or "chrome",
+        "pbk": query.get("pbk") or "",
+        "sid": query.get("sid") or "",
+        "path": query.get("path") or "/",
+        "host_header": query.get("host") or "",
+        "service": query.get("serviceName") or "",
+        "mode": query.get("mode") or "auto",
+        "flow": query.get("flow") or "",
+        "alpn": [a for a in (query.get("alpn") or "").split(",") if a],
     }
-    if query.get("flow"):
-        outbound["flow"] = query["flow"]
-    if tls:
-        outbound["tls"] = tls
-    if transport:
-        outbound["transport"] = transport
-    return {"name": name, "host": host, "port": port, "net": net,
-            "outbound": outbound}
+
+
+def xray_outbound(item: dict, tag: str) -> dict:
+    """VLESS-выход для Xray-core: ws, xhttp, grpc, tcp, http."""
+    stream: dict = {"network": item["net"]}
+    security = item["security"]
+    if security == "reality":
+        stream["security"] = "reality"
+        stream["realitySettings"] = {
+            "serverName": item["sni"],
+            "fingerprint": item["fp"],
+            "publicKey": item["pbk"],
+            "shortId": item["sid"],
+            "spiderX": "/",
+        }
+    elif security == "tls":
+        stream["security"] = "tls"
+        stream["tlsSettings"] = {
+            "serverName": item["sni"] or item["host"],
+            "fingerprint": item["fp"],
+            **({"alpn": item["alpn"]} if item["alpn"] else {}),
+        }
+    else:
+        stream["security"] = "none"
+
+    if item["net"] == "ws":
+        ws: dict = {"path": item["path"]}
+        if item["host_header"]:
+            ws["host"] = item["host_header"]
+        stream["wsSettings"] = ws
+    elif item["net"] == "xhttp":
+        # Провайдер отдаёт mode=stream-one, но при потоке коротких
+        # соединений он рвёт TLS (UNEXPECTED_EOF). В auto Xray сам
+        # выбирает рабочий режим — проверено: 10/10 запросов без сбоев.
+        xhttp = {"path": item["path"], "mode": "auto"}
+        if item["host_header"]:
+            xhttp["host"] = item["host_header"]
+        stream["xhttpSettings"] = xhttp
+    elif item["net"] == "grpc":
+        stream["grpcSettings"] = {"serviceName": item["service"]}
+    elif item["net"] in ("http", "h2"):
+        stream["network"] = "http"
+        stream["httpSettings"] = {"path": item["path"]}
+
+    user: dict = {"id": item["uuid"], "encryption": "none"}
+    if item["flow"]:
+        user["flow"] = item["flow"]
+    return {
+        "tag": tag,
+        "protocol": "vless",
+        "settings": {"vnext": [{
+            "address": item["host"],
+            "port": item["port"],
+            "users": [user],
+        }]},
+        "streamSettings": stream,
+    }
 
 
 def tcp_latency(host: str, port: int, timeout: float = 3.0) -> float | None:
@@ -128,47 +155,56 @@ def tcp_latency(host: str, port: int, timeout: float = 3.0) -> float | None:
 
 
 def build_config(outbounds: list[dict]) -> dict:
-    """Mixed-прокси (HTTP CONNECT + SOCKS5) без TUN.
+    """Конфиг Xray-core: HTTP-прокси на 2080 и SOCKS5 на 2081.
 
-    Приложения ходят через прокси по env HTTPS_PROXY/HTTP_PROXY. Это
-    надёжнее TUN: DNS резолвится на стороне VPN, локальные сервисы
-    (postgres, qdrant, open-webui) остаются напрямую, обновления хоста
-    (apt, docker pull) VPN не затрагивают.
+    Провайдер отдаёт VLESS поверх xhttp+reality; sing-box такую связку
+    не умеет, Xray — умеет. Несколько серверов объединены балансером
+    leastPing: при отказе одного трафик уходит на живой.
     """
+    tags = [item["tag"] for item in outbounds]
     return {
-        "log": {"level": "warn", "timestamp": True},
+        "log": {"loglevel": "warning"},
         "dns": {
-            "servers": [
-                {"type": "https", "tag": "remote", "server": "1.1.1.1",
-                 "detour": "proxy"},
-                {"type": "local", "tag": "local"},
-            ],
-            "final": "remote",
-            "strategy": "prefer_ipv4",
+            "servers": ["https+local://1.1.1.1/dns-query"],
+            "queryStrategy": "UseIPv4",
         },
-        "inbounds": [{
-            "type": "mixed",
-            "tag": "mixed-in",
-            "listen": "0.0.0.0",
-            "listen_port": 2080,
-        }],
-        # Несколько серверов + автопереключение: если один отваливается,
-        # sing-box сам переходит на следующий по доступности.
+        "inbounds": [
+            {
+                "tag": "http-in",
+                "listen": "0.0.0.0",
+                "port": 2080,
+                "protocol": "http",
+                "settings": {"allowTransparent": False},
+            },
+            {
+                "tag": "socks-in",
+                "listen": "0.0.0.0",
+                "port": 2081,
+                "protocol": "socks",
+                "settings": {"auth": "noauth", "udp": True},
+            },
+        ],
         "outbounds": [
             *outbounds,
-            {
-                "type": "urltest",
-                "tag": "proxy",
-                "outbounds": [item["tag"] for item in outbounds],
-                "url": "https://www.gstatic.com/generate_204",
-                "interval": "3m",
-                "tolerance": 50,
-            },
-            {"type": "direct", "tag": "direct"},
+            {"tag": "direct", "protocol": "freedom"},
+            {"tag": "block", "protocol": "blackhole"},
         ],
-        "route": {
-            "final": "proxy",
-            "default_domain_resolver": "local",
+        "observatory": {
+            "subjectSelector": tags,
+            "probeUrl": "https://www.gstatic.com/generate_204",
+            "probeInterval": "3m",
+            "enableConcurrency": True,
+        },
+        "routing": {
+            "domainStrategy": "AsIs",
+            "balancers": [{
+                "tag": "proxy",
+                "selector": tags,
+                "strategy": {"type": "leastPing"},
+            }],
+            "rules": [
+                {"type": "field", "ip": ["geoip:private"], "outboundTag": "direct"},
+            ],
         },
     }
 
@@ -231,18 +267,36 @@ def main() -> int:
         latency = tcp_latency(item["host"], item["port"])
         if latency is not None:
             measured.append((latency, item))
+    if not measured and not args.server:
+        # Все Auto легли — берём обычные серверы (без AI, белых списков,
+        # торрентов и YouTube), иначе Telegram останется без связи.
+        fallback = []
+        for line in text.splitlines():
+            if not line.startswith("vless://"):
+                continue
+            item = parse_vless(line.strip())
+            if item["net"] not in SUPPORTED_NET:
+                continue
+            if any(word in item["name"].lower() for word in EXCLUDE):
+                continue
+            fallback.append(item)
+        for item in fallback:
+            latency = tcp_latency(item["host"], item["port"])
+            if latency is not None:
+                measured.append((latency, item))
+        if measured:
+            print("[warn] Auto-серверы недоступны — использую обычные",
+                  file=sys.stderr)
     if not measured:
-        print("[fail] ни один Auto-сервер не отвечает по TCP", file=sys.stderr)
+        print("[fail] ни один сервер не отвечает по TCP", file=sys.stderr)
         return 1
     measured.sort(key=lambda pair: pair[0])
     # Берём до 6 самых быстрых: urltest переключится, если сервер отвалится.
     selected = measured[:6]
     outbounds = []
     for index, (latency, item) in enumerate(selected, start=1):
-        outbound = dict(item["outbound"])
-        outbound["tag"] = f"s{index}"
-        outbounds.append(outbound)
-        print(f"  s{index}: {item['name']} ({latency:.0f} мс)")
+        outbounds.append(xray_outbound(item, f"s{index}"))
+        print(f"  s{index}: {item['name']} ({latency:.0f} мс, {item['net']})")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(

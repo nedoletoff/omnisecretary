@@ -16,6 +16,7 @@ import os
 import secrets
 import subprocess
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -47,6 +48,34 @@ def token() -> str:
         return TOKEN_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         return ""
+
+
+def clean_repo_url(raw: str) -> str:
+    """Проверяет URL репозитория.
+
+    Токен передаётся только через http.extraheader, поэтому логин/пароль
+    внутри URL не нужны: они попали бы в argv (`ps`) и в .git/config.
+    """
+    raw = raw.strip()
+    parts = urlsplit(raw)
+    if parts.scheme != "https" or not parts.hostname:
+        raise ValueError("нужен https-URL")
+    if parts.username or parts.password or "@" in parts.netloc:
+        raise ValueError("URL не должен содержать логин или токен")
+    return raw
+
+
+def check_csrf(request: Request, value: str) -> None:
+    """Double-submit cookie + проверка Origin: форма без cookie не пройдёт."""
+    cookie = request.cookies.get("vault_csrf", "")
+    if not cookie or not value or not secrets.compare_digest(cookie, value):
+        raise HTTPException(403, "форма устарела — обновите страницу")
+    origin = request.headers.get("origin") or request.headers.get("referer") or ""
+    if origin:
+        host = (urlsplit(origin).hostname or "").lower()
+        own = (request.headers.get("host", "").split(":")[0] or "").lower()
+        if host and own and host != own:
+            raise HTTPException(403, "запрос с чужого сайта")
 
 
 def save_token(value: str) -> None:
@@ -129,10 +158,11 @@ PAGE = """<!doctype html>
 только в <code>AI/</code> и коммитит каждое изменение.</p>
 {message}
 <fieldset><legend>Состояние</legend><pre>{status}</pre>
-<form method="post" action="./sync"><button class="secondary">Синхронизировать (pull + push)</button></form>
+<form method="post" action="./sync"><input type="hidden" name="csrf" value="{csrf}"><button class="secondary">Синхронизировать (pull + push)</button></form>
 </fieldset>
 <fieldset><legend>Подключить репозиторий</legend>
 <form method="post" action="./setup">
+  <input type="hidden" name="csrf" value="{csrf}">
   <label>URL репозитория (https)</label>
   <input name="repo_url" placeholder="https://github.com/user/private-vault.git" required>
   <label>Ветка</label>
@@ -157,26 +187,36 @@ MESSAGES = {
 }
 
 
-def render(message: str = "", branch: str = BRANCH_DEFAULT) -> HTMLResponse:
+def render(message: str = "", branch: str = BRANCH_DEFAULT,
+           csrf: str = "") -> HTMLResponse:
     import html
     import json
-    return HTMLResponse(PAGE.format(
+    response = HTMLResponse(PAGE.format(
         message=message,
         status=html.escape(json.dumps(status(), ensure_ascii=False, indent=2)),
         branch=html.escape(branch),
+        csrf=html.escape(csrf),
     ))
+    if csrf:
+        response.set_cookie("vault_csrf", csrf, max_age=3600,
+                            httponly=True, samesite="strict")
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(msg: str = "", _: str = Depends(auth)) -> HTMLResponse:
-    return render(MESSAGES.get(msg, ""))
+def index(request: Request, msg: str = "", _: str = Depends(auth)) -> HTMLResponse:
+    return render(MESSAGES.get(msg, ""), csrf=secrets.token_urlsafe(24))
 
 
 @app.post("/setup")
-def setup(repo_url: str = Form(...), branch: str = Form(BRANCH_DEFAULT),
-          token_value: str = Form("", alias="token"), _: str = Depends(auth)) -> RedirectResponse:
-    repo_url = repo_url.strip()
-    if not repo_url.startswith("https://"):
+def setup(request: Request, repo_url: str = Form(...),
+          branch: str = Form(BRANCH_DEFAULT),
+          token_value: str = Form("", alias="token"), csrf: str = Form(""),
+          _: str = Depends(auth)) -> RedirectResponse:
+    check_csrf(request, csrf)
+    try:
+        repo_url = clean_repo_url(repo_url)
+    except ValueError:
         return RedirectResponse("./?msg=bad_url", status_code=303)
     if token_value.strip():
         save_token(token_value)
@@ -209,7 +249,9 @@ def setup(repo_url: str = Form(...), branch: str = Form(BRANCH_DEFAULT),
 
 
 @app.post("/sync")
-def sync(_: str = Depends(auth)) -> RedirectResponse:
+def sync(request: Request, csrf: str = Form(""),
+         _: str = Depends(auth)) -> RedirectResponse:
+    check_csrf(request, csrf)
     if not is_repo():
         return RedirectResponse("./?msg=not_ready", status_code=303)
     git("pull", "--rebase", "--autostash")

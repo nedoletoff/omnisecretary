@@ -169,6 +169,9 @@ services:
       - frontend
       - backend
       - mcp
+      # Нужна, чтобы Open WebUI вызывал MCP песочницы; сама песочница
+      # к backend-сервисам доступа не имеет.
+      - sandbox
     healthcheck:
       test:
         - CMD
@@ -359,24 +362,27 @@ services:
     logging: *default-logging
 
   # ─────────────────────────────────────────────────────────────
-  # VPN-прокси: sing-box (VLESS) + mixed inbound (HTTP CONNECT/SOCKS5).
+  # VPN-прокси: Xray-core (VLESS/xhttp+reality) + HTTP/SOCKS inbound.
   # Приложения получают HTTPS_PROXY=http://vpn:2080 и ходят в интернет
   # через VPN; локальные сервисы (postgres, qdrant, open-webui) — напрямую
   # через NO_PROXY. Обновления хоста (apt, docker pull) VPN не затрагивают.
   # Конфиг генерирует scripts/vpn-config.py из подписки VPN_KEY.
   # ─────────────────────────────────────────────────────────────
   vpn:
-    image: ghcr.io/sagernet/sing-box:v1.12.9
+    # Xray-core: провайдер отдаёт VLESS поверх xhttp+reality,
+    # sing-box такие транспорты не поддерживает.
+    image: teddysun/xray:26.11.9
     container_name: omni-vpn
     restart: unless-stopped
-    command: ["run", "-c", "/etc/sing-box/config.json"]
+    command: ["/usr/bin/xray", "run", "-c", "/etc/xray/config.json"]
     volumes:
-      - ${DATA_ROOT}/vpn/config.json:/etc/sing-box/config.json:ro
+      - ${DATA_ROOT}/vpn/config.json:/etc/xray/config.json:ro
     networks:
       - backend
     ports:
       # Только localhost — для проверок и мониторинга с хоста.
       - "127.0.0.1:2080:2080"
+      - "127.0.0.1:2081:2081"
     mem_limit: 96m
     security_opt:
       - no-new-privileges:true
@@ -402,6 +408,8 @@ services:
       PORTAL_DATA: /data
       BOT_DB_PATH: /bot/bot.db
       PORTAL_SECRET: ${PORTAL_SECRET:-}
+      PORTAL_OWNER: ${WEBUI_ADMIN_EMAIL:-}
+      STATUS_FILE: /status/device.json
       REGISTER_TOKEN: ${REGISTER_TOKEN:-}
       TELEGRAM_CONFIRM_CODE: ${TELEGRAM_CONFIRM_CODE:-}
       WEATHER_CITY: ${WEATHER_CITY:-}
@@ -411,6 +419,7 @@ services:
       - ${DATA_ROOT}/portal:/data
       - ${DATA_ROOT}/secrets:/secrets:ro
       - ${DATA_ROOT}/bot:/bot
+      - ${DATA_ROOT}/status:/status:ro
     networks: [frontend]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
@@ -486,6 +495,7 @@ services:
       VAULT_INDEX_PATH: /index/vault.db
       VAULT_WRITE_PREFIX: ${VAULT_WRITE_PREFIX:-AI}
       VAULT_TOKEN_FILE: /secrets/vault-git-token
+      VAULT_PUSH_ENABLED: ${VAULT_PUSH_ENABLED:-true}
       MCP_PORT: "8000"
     volumes:
       - ./mcp/servers:/app/servers:ro
@@ -538,6 +548,7 @@ services:
     restart: unless-stopped
     environment:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_WRITE_ENABLED: ${GITHUB_WRITE_ENABLED:-false}
       MCP_PORT: "8000"
     volumes:
       - ./mcp/servers:/app/servers:ro
@@ -596,7 +607,9 @@ services:
     volumes:
       - ./mcp/servers:/app/servers:ro
       - ${DATA_ROOT}/sandbox:/workspace
-    networks: [backend]
+    # Своя сеть: интернет для pip/npm есть, доступа к postgres, Qdrant,
+    # Redis, Vikunja и MCP-серверам с секретами — нет.
+    networks: [sandbox]
     healthcheck:
       test: ["CMD", "python", "-c", "import socket;socket.create_connection(('127.0.0.1',8000),2)"]
       interval: 30s
@@ -755,6 +768,9 @@ networks:
   # open-webui ↔ MCP-серверы. Песочницы здесь нет: prompt injection
   # из shell не должен дотянуться до GitHub-токена и вольта.
   mcp:
+    driver: bridge
+  # Песочница: только внешний интернет, никаких внутренних сервисов.
+  sandbox:
     driver: bridge
 
 volumes:

@@ -5,6 +5,19 @@
 Отдельный контейнер `proactive` (профиль `proactive`, 96 МБ) раз в сутки
 собирает сводку и отправляет её в Telegram владельцу.
 
+### Настройка из бота
+
+```
+/briefing                  показать текущие настройки
+/briefing 08:00            время отправки (часовой пояс — TZ)
+/briefing sections weather,calendar,tasks,notes
+/briefing off              выключить; /briefing on — включить
+```
+
+Настройки хранятся в `${DATA_ROOT}/bot/briefing.json` (600) и важнее
+`BRIEFING_TIME` из `.env`. Менять может только владелец
+(`TELEGRAM_OWNER_ID`). Разделы можно комбинировать в любом порядке.
+
 ```
 07:30 (BRIEFING_TZ)
    ├── погода       api.met.no (без ключа)

@@ -100,7 +100,31 @@ EOF
     fi
 }
 
-# ── 4. Проверка SSH (только чтение) ──────────────────────────
+# ── 4. Cron: снимок состояния и продление сертификата ───────
+install_cron() {
+    local project_dir data_root
+    project_dir="$(cd "$SCRIPT_DIR/.." && pwd)"
+    data_root="${DATA_ROOT:-/srv/omnisecretary}"
+    if ! confirm "Поставить cron: снимок состояния раз в минуту и продление сертификата?"; then
+        return 0
+    fi
+    cat > /etc/cron.d/omnisecretary-status <<EOF
+# Снимок состояния для админ-панели портала. Портал только читает файл.
+* * * * * root DATA_ROOT=$data_root STATUS_FILE=$data_root/status/device.json /usr/bin/python3 $project_dir/scripts/device-status.py >/dev/null 2>&1
+EOF
+    chmod 644 /etc/cron.d/omnisecretary-status
+    cat > /etc/cron.d/omnisecretary-renew <<EOF
+# Продление сертификата Let's Encrypt и перезагрузка nginx.
+17 3 * * * root /bin/bash $project_dir/scripts/renew-certs.sh >>/var/log/omnisecretary-renew.log 2>&1
+EOF
+    chmod 644 /etc/cron.d/omnisecretary-renew
+    mkdir -p "$data_root/status"
+    DATA_ROOT="$data_root" STATUS_FILE="$data_root/status/device.json" \
+        python3 "$project_dir/scripts/device-status.py" || true
+    log_ok "cron установлен, снимок состояния создан"
+}
+
+# ── 5. Проверка SSH (только чтение) ──────────────────────────
 check_ssh() {
     log_info "Проверка SSH:"
     sshd -T 2>/dev/null | grep -E '^(permitrootlogin|passwordauthentication|pubkeyauthentication)' \
@@ -112,5 +136,6 @@ require_root
 install_packages
 configure_ufw
 configure_unattended
+install_cron
 check_ssh
 log_ok "Готово. Проверить: sudo ufw status; systemctl status unattended-upgrades"

@@ -73,6 +73,9 @@ DEFAULT_MODEL = os.environ.get("TELEGRAM_DEFAULT_MODEL", "secretary")
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", "/srv/omnisecretary"))
 SECRETS_DIR = DATA_ROOT / "secrets"
 DB_PATH = Path(os.environ.get("BOT_DB_PATH", str(DATA_ROOT / "bot" / "bot.db")))
+# Настройки брифинга читает контейнер proactive (том смонтирован только для чтения).
+BRIEFING_FILE = DB_PATH.parent / "briefing.json"
+BRIEFING_SECTIONS = ("weather", "calendar", "tasks", "notes")
 PRIVATE_HISTORY_TURNS = 6
 
 logging.basicConfig(
@@ -90,6 +93,9 @@ HELP_TEXT = """Я — OmniSecretary. Пишите текстом, я отвеч�
 /private — приватный режим: ничего не сохраняется
 /public — вернуться к обычному режиму
 /weather [город] — погода; с городом — сменить локацию
+/briefing — настройки утренней сводки
+/briefing 08:00 — время сводки; /briefing sections weather,calendar,tasks,notes
+/briefing on|off — включить или выключить сводку
 /app — открыть веб-интерфейс (Mini App) в том же дизайне
 /remind 20:30 позвонить маме — напоминание (20:30, +15m, 12.11 09:00)
 /reminders — ближайшие напоминания
@@ -609,6 +615,41 @@ def reminder_loop() -> None:
         time.sleep(20)
 
 
+def briefing_settings() -> dict:
+    data = {"enabled": True, "time": "07:30", "sections": list(BRIEFING_SECTIONS)}
+    try:
+        raw = json.loads(BRIEFING_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return data
+    if isinstance(raw.get("enabled"), bool):
+        data["enabled"] = raw["enabled"]
+    if re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", str(raw.get("time", ""))):
+        data["time"] = raw["time"]
+    sections = raw.get("sections")
+    if isinstance(sections, list):
+        chosen = [s for s in sections if s in BRIEFING_SECTIONS]
+        data["sections"] = chosen
+    return data
+
+
+def save_briefing_settings(data: dict) -> None:
+    BRIEFING_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = BRIEFING_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.chmod(0o600)
+    tmp.replace(BRIEFING_FILE)
+
+
+def briefing_reply(data: dict) -> str:
+    names = {"weather": "погода", "calendar": "календарь",
+             "tasks": "задачи", "notes": "заметки"}
+    on = "включена" if data["enabled"] else "выключена"
+    parts = ", ".join(names[s] for s in data["sections"]) or "ничего"
+    return (f"Утренняя сводка {on}, время {data['time']} ({os.environ.get('TZ', 'Europe/Moscow')}).\n"
+            f"Разделы: {parts}.\n"
+            "Изменить: /briefing 08:00, /briefing sections weather,calendar,tasks,notes, /briefing off")
+
+
 def handle_command(tg_id: int, chat_id: int, text: str) -> bool:
     command, _, argument = text.partition(" ")
     command = command.split("@")[0].lower()
@@ -712,6 +753,37 @@ def handle_command(tg_id: int, chat_id: int, text: str) -> bool:
             return True
         lat, lon, city = place
         send(chat_id, weather_at(lat, lon, city))
+        return True
+
+    if command == "/briefing":
+        if tg_id != OWNER_ID:
+            send(chat_id, "Настройка сводки доступна только владельцу.")
+            return True
+        data = briefing_settings()
+        low = argument.lower()
+        if low in ("on", "вкл", "включить"):
+            data["enabled"] = True
+        elif low in ("off", "выкл", "выключить"):
+            data["enabled"] = False
+        elif low.startswith("sections"):
+            raw = argument[len("sections"):].strip()
+            chosen = [s for s in re.split(r"[,\s]+", raw) if s]
+            unknown = [s for s in chosen if s not in BRIEFING_SECTIONS]
+            if unknown or not chosen:
+                send(chat_id, "Разделы: weather, calendar, tasks, notes.\n"
+                              "Пример: /briefing sections weather,calendar,tasks")
+                return True
+            data["sections"] = chosen
+        elif argument:
+            if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", argument):
+                send(chat_id, "Время в формате ЧЧ:ММ, например /briefing 08:00")
+                return True
+            data["time"] = argument
+        else:
+            send(chat_id, briefing_reply(data))
+            return True
+        save_briefing_settings(data)
+        send(chat_id, briefing_reply(data))
         return True
 
     if command == "/app":

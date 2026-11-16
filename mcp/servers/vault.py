@@ -31,6 +31,9 @@ INDEX_PATH = Path(os.environ.get("VAULT_INDEX_PATH", "/index/vault.db"))
 TOKEN_FILE = Path(os.environ.get("VAULT_TOKEN_FILE", "/secrets/vault-git-token"))
 GIT_TIMEOUT = int(os.environ.get("VAULT_GIT_TIMEOUT", "60"))
 MAX_READ_CHARS = 8000
+# Push после записи. Отключение оставляет коммиты локальными (pull/push вручную).
+PUSH_ENABLED = os.environ.get("VAULT_PUSH_ENABLED", "true").lower() in (
+    "1", "true", "yes", "on")
 
 mcp = FastMCP(
     "obsidian-vault",
@@ -110,7 +113,8 @@ def commit(paths: list[str], message: str) -> str:
     if not status.stdout.strip():
         return "изменений нет"
     git("commit", "-m", message)
-    _push_pending.set()
+    if PUSH_ENABLED:
+        _push_pending.set()
     sha = git("rev-parse", "--short", "HEAD").stdout.strip()
     return f"коммит {sha}: {message}"
 

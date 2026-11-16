@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
@@ -29,7 +30,15 @@ SECRETS_DIR = Path(os.environ.get("SECRETS_DIR", "/secrets"))
 DATA_DIR = Path(os.environ.get("PORTAL_DATA", "/data"))
 DB_PATH = DATA_DIR / "portal.db"
 BOT_DB_PATH = Path(os.environ.get("BOT_DB_PATH", "/bot/bot.db"))
-SECRET = os.environ.get("PORTAL_SECRET", "change-me")
+SECRET = os.environ.get("PORTAL_SECRET", "").strip()
+# Без настоящего секрета подпись cookie предсказуема: лучше не стартовать.
+if len(SECRET) < 32 or SECRET in {"change-me", "changeme", "secret"}:
+    raise RuntimeError(
+        "PORTAL_SECRET не задан или слишком короткий (нужно ≥32 символа). "
+        "Сгенерируйте: openssl rand -hex 32")
+OWNER = os.environ.get("PORTAL_OWNER", "").strip()
+STATUS_FILE = Path(os.environ.get("STATUS_FILE", "/status/device.json"))
+TOKEN_KEY_FILE = DATA_DIR / "token.key"
 INVITE_TOKEN = (os.environ.get("REGISTER_TOKEN")
                 or os.environ.get("TELEGRAM_CONFIRM_CODE") or "")
 DEFAULT_CITY = os.environ.get("WEATHER_CITY", "")
@@ -82,6 +91,76 @@ def db() -> sqlite3.Connection:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+# ── Шифрование пользовательских токенов ──────────────────────────────────
+# GitHub-токен в portal.db хранится в AES-256-GCM. Ключ — в /data/token.key
+# (600). Без ключа расшифровать дамп базы нельзя.
+
+_token_key_cache: bytes | None = None
+
+
+def _token_key() -> bytes:
+    global _token_key_cache
+    if _token_key_cache is None:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        if TOKEN_KEY_FILE.exists():
+            raw = TOKEN_KEY_FILE.read_bytes()
+            _token_key_cache = (raw[:32] if len(raw) >= 32
+                                else raw.ljust(32, b"\0"))
+        else:
+            key = os.urandom(32)
+            old_umask = os.umask(0o077)
+            try:
+                TOKEN_KEY_FILE.write_bytes(key)
+            finally:
+                os.umask(old_umask)
+            TOKEN_KEY_FILE.chmod(0o600)
+            _token_key_cache = key
+    return _token_key_cache
+
+
+def enc_token(value: str) -> str:
+    value = (value or "").strip()
+    if not value or value.startswith("enc:v1:"):
+        return value
+    nonce = os.urandom(12)
+    blob = AESGCM(_token_key()).encrypt(nonce, value.encode(), b"github")
+    return "enc:v1:" + base64.urlsafe_b64encode(nonce).decode() + \
+        ":" + base64.urlsafe_b64encode(blob).decode()
+
+
+def dec_token(value: str) -> str:
+    if not value:
+        return ""
+    if not value.startswith("enc:v1:"):
+        return value  # запись до миграции
+    try:
+        _, _, nonce_b64, blob_b64 = value.split(":", 3)
+        nonce = base64.urlsafe_b64decode(nonce_b64)
+        blob = base64.urlsafe_b64decode(blob_b64)
+        return AESGCM(_token_key()).decrypt(nonce, blob, b"github").decode()
+    except Exception:  # noqa: BLE001 — битый ключ/данные не должны ронять портал
+        return ""
+
+
+def migrate_tokens() -> int:
+    """Шифрует токены, сохранённые открытым текстом до этой версии."""
+    conn = db()
+    rows = conn.execute(
+        "SELECT owui_id, github_token FROM profiles WHERE github_token != ''"
+    ).fetchall()
+    changed = 0
+    for row in rows:
+        value = row["github_token"]
+        if not value.startswith("enc:v1:"):
+            conn.execute("UPDATE profiles SET github_token = ? WHERE owui_id = ?",
+                         (enc_token(value), row["owui_id"]))
+            changed += 1
+    if changed:
+        conn.commit()
+    conn.close()
+    return changed
 
 
 def sign(payload: str) -> str:
@@ -412,6 +491,126 @@ location.replace("/");
     return response
 
 
+@app.get("/admin/status", response_class=HTMLResponse)
+def admin_status(request: Request):
+    """Панель устройства: только владелец. Данные пишет cron раз в минуту."""
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not OWNER or session.get("u") != OWNER:
+        return HTMLResponse(page("Доступ закрыт",
+                                 '<p class="sub">Страница только для владельца.</p>'),
+                            status_code=403)
+    try:
+        data = json.loads(STATUS_FILE.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — нет файла или он ещё не создан
+        data = {}
+    return HTMLResponse(render_status(data))
+
+
+def _fmt(value: object, unit: str = "") -> str:
+    if value is None:
+        return "—"
+    return f"{value}{unit}"
+
+
+def render_status(d: dict) -> str:
+    temp = d.get("temp_c")
+    temp_color = "#b8bb26"
+    if isinstance(temp, (int, float)):
+        temp_color = ("#fb4934" if temp >= 75 else
+                      "#fabd2f" if temp >= 65 else "#b8bb26")
+    mem = d.get("mem") or {}
+    disks = d.get("disk") or {}
+    cert = d.get("cert_days")
+    cert_color = "#fb4934" if isinstance(cert, int) and cert < 14 else "#b8bb26"
+    unhealthy = (d.get("containers") or {}).get("unhealthy") or []
+    flags = d.get("throttle_flags") or []
+    rows_disk = "".join(
+        f"<tr><td>{esc(path)}</td><td>{_fmt(v.get('used_gb'))} ГБ / "
+        f"{_fmt(v.get('total_gb'))} ГБ</td><td>{_fmt(v.get('pct'))}%</td></tr>"
+        for path, v in disks.items())
+    flags_html = (", ".join(esc(f) for f in flags) if flags
+                  else "нет")
+    return f"""<!doctype html>
+<html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="10">
+<title>Устройство — OmniSecretary</title>
+<style>
+:root {{ --bg:#282828; --bg1:#3c3836; --bg2:#504945; --fg:#ebdbb2;
+        --gray:#928374; --yellow:#fabd2f; --green:#b8bb26; --red:#fb4934;
+        --blue:#83a598; }}
+* {{ box-sizing:border-box; }}
+body {{ margin:0; background:var(--bg); color:var(--fg);
+       font:15px/1.5 ui-monospace,"JetBrains Mono",monospace; padding:24px; }}
+main {{ max-width:900px; margin:0 auto; }}
+h1 {{ font-size:20px; margin:0 0 4px; }} h1 span {{ color:var(--yellow); }}
+p.sub {{ color:var(--gray); font-size:13px; margin:0 0 20px; }}
+.grid {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+        gap:14px; }}
+.card {{ background:var(--bg1); border:1px solid var(--bg2);
+        border-radius:12px; padding:16px 18px; }}
+.card h2 {{ font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+           color:var(--gray); margin:0 0 10px; }}
+.big {{ font-size:32px; font-weight:700; color:{temp_color}; }}
+.kv {{ display:flex; justify-content:space-between; gap:12px; padding:3px 0; }}
+.kv span:first-child {{ color:var(--gray); }}
+table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+td {{ padding:3px 0; border-bottom:1px solid var(--bg2); }}
+tr:last-child td {{ border-bottom:0; }}
+a {{ color:var(--blue); }}
+</style></head>
+<body><main>
+<h1>Устройство <span>OmniSecretary</span></h1>
+<p class="sub">Обновление каждые 10 с · снимок {esc(d.get('time', '—'))} ·
+модель {esc(d.get('model', '—'))}</p>
+<div class="grid">
+  <div class="card"><h2>Температура</h2>
+    <div class="big">{_fmt(temp)} °C</div>
+    <div class="kv"><span>частота</span><span>{_fmt(d.get('freq_mhz'))} МГц</span></div>
+    <div class="kv"><span>троттлинг</span><span>{esc(d.get('throttled', '—'))}</span></div>
+    <div class="kv"><span>флаги</span><span>{flags_html}</span></div>
+  </div>
+  <div class="card"><h2>Процессор</h2>
+    <div class="big">{esc(d.get('load1', '—'))}</div>
+    <div class="kv"><span>load 1/5/15</span>
+      <span>{esc(d.get('load', '—'))}</span></div>
+    <div class="kv"><span>ядер</span><span>{_fmt(d.get('cores'))}</span></div>
+    <div class="kv"><span>uptime</span><span>{esc(d.get('uptime', '—'))}</span></div>
+  </div>
+  <div class="card"><h2>Память</h2>
+    <div class="big">{_fmt(mem.get('used_mb'))} МБ</div>
+    <div class="kv"><span>всего</span><span>{_fmt(mem.get('total_mb'))} МБ</span></div>
+    <div class="kv"><span>доступно</span><span>{_fmt(mem.get('available_mb'))} МБ</span></div>
+    <div class="kv"><span>swap</span><span>{_fmt(mem.get('swap_used_mb'))} /
+      {_fmt(mem.get('swap_total_mb'))} МБ</span></div>
+  </div>
+  <div class="card"><h2>Сервисы</h2>
+    <div class="big">{_fmt((d.get('containers') or {}).get('running'))} /
+      {_fmt((d.get('containers') or {}).get('total'))}</div>
+    <div class="kv"><span>нездоровые</span>
+      <span>{esc(', '.join(unhealthy)) if unhealthy else 'нет'}</span></div>
+    <div class="kv"><span>ядро</span><span>{esc(d.get('kernel', '—'))}</span></div>
+  </div>
+  <div class="card"><h2>Диски</h2>
+    <table>{rows_disk or '<tr><td>нет данных</td></tr>'}</table>
+  </div>
+  <div class="card"><h2>Обслуживание</h2>
+    <div class="kv"><span>сертификат</span>
+      <span style="color:{cert_color}">{_fmt(cert)} дн.</span></div>
+    <div class="kv"><span>последний бэкап</span>
+      <span>{esc((d.get('backup') or {}).get('last', '—'))}</span></div>
+    <div class="kv"><span>размер бэкапа</span>
+      <span>{_fmt((d.get('backup') or {}).get('size_mb'))} МБ</span></div>
+    <div class="kv"><span>firewall</span><span>{esc(d.get('ufw', '—'))}</span></div>
+  </div>
+</div>
+<p class="sub" style="margin-top:20px">
+  <a href="/portal/account">Настройки</a> · <a href="/">В чат</a></p>
+</main></body></html>"""
+
+
 @app.get("/logout")
 def logout():
     response = RedirectResponse("/portal/login", status_code=303)
@@ -435,6 +634,8 @@ def account(request: Request, message: str = "", error: int = 0):
     preset_options = "".join(
         f'<option value="{name}"{" selected" if name == profile["preset"] else ""}>{name}</option>'
         for name in PRESETS)
+    admin_link = ('<a href="/portal/admin/status">Устройство</a> · '
+                  if OWNER and session.get("u") == OWNER else "")
     body = f"""
 <form method="post" action="/portal/account">
   <input type="hidden" name="csrf" value="{csrf_token()}">
@@ -453,7 +654,7 @@ def account(request: Request, message: str = "", error: int = 0):
   <select name="preset">{preset_options}</select>
   <button type="submit">Сохранить</button>
 </form>
-<p class="foot"><a href="/">В чат</a> · <a href="/portal/logout">Выйти</a></p>"""
+<p class="foot">{admin_link}<a href="/">В чат</a> · <a href="/portal/logout">Выйти</a></p>"""
     return HTMLResponse(page("Личные настройки", body, message, bool(error)))
 
 
@@ -483,7 +684,11 @@ def account_save(request: Request, city: str = Form(""), telegram_id: str = Form
     if not profile:
         conn.close()
         return RedirectResponse("/portal/login", status_code=303)
-    token_value = github_token.strip() or profile["github_token"]
+    token_value = github_token.strip()
+    if token_value:
+        token_value = enc_token(token_value)
+    else:
+        token_value = profile["github_token"]
     conn.execute(
         "UPDATE profiles SET city = ?, telegram_id = ?, github_token = ?, "
         "preset = ? WHERE owui_id = ?",
@@ -534,3 +739,10 @@ def geocode(query: str) -> tuple[float | None, float | None]:
     if not found:
         return None, None
     return float(found[0]["lat"]), float(found[0]["lon"])
+
+
+# Шифруем токены, сохранённые открытым текстом до этой версии. Идемпотентно.
+try:
+    migrate_tokens()
+except Exception:  # noqa: BLE001 — портал должен подняться даже при сбое миграции
+    pass

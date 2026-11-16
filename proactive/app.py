@@ -30,6 +30,9 @@ from fastapi.responses import JSONResponse
 TZ = ZoneInfo(os.environ.get("BRIEFING_TZ", "Europe/Moscow"))
 BRIEFING_TIME = os.environ.get("BRIEFING_TIME", "07:30")
 STATE_FILE = Path(os.environ.get("BRIEFING_STATE", "/state/last-briefing"))
+# Настройки из бота (том bot смонтирован только для чтения).
+SETTINGS_FILE = Path(os.environ.get("BRIEFING_SETTINGS", "/data/bot/briefing.json"))
+ALL_SECTIONS = ("weather", "calendar", "tasks", "notes")
 VAULT_DIR = Path(os.environ.get("VAULT_DIR", "/vault"))
 
 WEBUI_URL = os.environ.get("WEBUI_BASE_URL", "http://open-webui:8080").rstrip("/")
@@ -188,13 +191,38 @@ def notes_text() -> str:
     return f"Заметки: в AI/Inbox {len(notes)} шт., последняя — {notes[-1].name}."
 
 
+def settings() -> dict:
+    """Время, разделы и вкл/выкл: файл из бота важнее env."""
+    data = {"enabled": True, "time": BRIEFING_TIME, "sections": list(ALL_SECTIONS)}
+    try:
+        raw = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return data
+    if isinstance(raw.get("enabled"), bool):
+        data["enabled"] = raw["enabled"]
+    time_value = str(raw.get("time", ""))
+    if len(time_value) == 5 and time_value[2] == ":" and time_value[:2].isdigit() \
+            and time_value[3:].isdigit():
+        data["time"] = time_value
+    sections = raw.get("sections")
+    if isinstance(sections, list):
+        data["sections"] = [s for s in sections if s in ALL_SECTIONS]
+    return data
+
+
 def build_briefing() -> str:
     date = datetime.now(TZ)
+    chosen = settings()["sections"]
     header = f"Доброе утро. {date:%d.%m.%Y}, {date:%H:%M}."
-    parts = [header, weather_text(), events_text(), tasks_text()]
-    extra = notes_text()
-    if extra:
-        parts.append(extra)
+    builders = {"weather": weather_text, "calendar": events_text,
+                "tasks": tasks_text, "notes": notes_text}
+    parts = [header]
+    for name in ALL_SECTIONS:
+        if name not in chosen:
+            continue
+        text = builders[name]()
+        if text:
+            parts.append(text)
     return "\n\n".join(parts)
 
 
@@ -233,7 +261,7 @@ def _due(now: datetime) -> bool:
     Догон нужен, если Pi был выключен в 07:30: при старте в 08:10 брифинг
     уйдёт, а в 20:00 — уже нет (не «доброе утро» среди ночи).
     """
-    hour, minute = (int(part) for part in BRIEFING_TIME.split(":"))
+    hour, minute = (int(part) for part in settings()["time"].split(":"))
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     delay = (now - target).total_seconds() / 60
     return 0 <= delay <= CATCHUP_MINUTES
@@ -244,7 +272,8 @@ def scheduler_loop() -> None:
     while True:
         try:
             now = datetime.now(TZ)
-            if _due(now) and not _already_sent(now.date().isoformat()):
+            current = settings()
+            if current["enabled"] and _due(now) and not _already_sent(now.date().isoformat()):
                 if send_telegram(build_briefing()):
                     _mark_sent(now.date().isoformat())
         except Exception:  # noqa: BLE001 — цикл не должен умирать
@@ -261,7 +290,9 @@ def start_scheduler() -> None:
 def healthz() -> JSONResponse:
     return JSONResponse({
         "status": "ok",
-        "briefing_time": BRIEFING_TIME,
+        "briefing_time": settings()["time"],
+        "sections": settings()["sections"],
+        "enabled": settings()["enabled"],
         "catchup_minutes": CATCHUP_MINUTES,
         "timezone": str(TZ),
         "telegram": bool(TELEGRAM_TOKEN and TELEGRAM_CHAT),
