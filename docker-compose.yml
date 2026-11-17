@@ -75,7 +75,11 @@ services:
       FALLBACK_BASE: ${FALLBACK_BASE:-https://text.pollinations.ai/openai}
       FALLBACK_MODEL: ${FALLBACK_MODEL:-openai-fast}
       PUBLIC_URL: ${PUBLIC_URL:-}
-      NO_PROXY: "*"
+      # OpenRouter отвечает «Access denied by security policy» с российского
+      # IP, поэтому шлюз ходит через VPN. Локальные адреса — напрямую.
+      HTTPS_PROXY: http://vpn:2080
+      HTTP_PROXY: http://vpn:2080
+      NO_PROXY: localhost,127.0.0.1,llm-gateway
     volumes:
       - ./llm:/app/llm:ro
     networks:

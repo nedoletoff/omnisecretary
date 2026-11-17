@@ -83,7 +83,9 @@ make mcp-build && make mcp-init
 (с откатом), `omni-free` (только бесплатная) и `omni-openrouter`.
 Бесплатная модель отвечает не чаще раза в 45 секунд на IP.
 
-Если ключа OpenRouter нет, `omni-auto` работает как бесплатная. Свой
+OpenRouter доступен только через VPN: с российского IP он отвечает
+«Access denied by security policy», поэтому `llm-gateway` ходит через
+`omni-vpn`. Если ключа OpenRouter нет, `omni-auto` работает как бесплатная. Свой
 OpenAI-совместимый провайдер можно подключить, заменив
 `OPENAI_API_BASE_URL` и `OPENAI_API_KEY` в `.env`, затем
 `make restart && make init-webui`.

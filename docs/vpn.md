@@ -9,7 +9,8 @@ VPN-подписка (VLESS) уже в `.env` (`VPN_KEY`), а `Xray-core` под
 
 ```
 telegram-bot ─┐
-proactive ────┼─ HTTPS_PROXY=http://vpn:2080 ─→ omni-vpn (Xray)
+proactive ────┤
+llm-gateway ──┼─ HTTPS_PROXY=http://vpn:2080 ─→ omni-vpn (Xray)
               │                                   │ VLESS (ws+tls)
               │                                   ▼
         open-webui, postgres, qdrant         VPN-сервер (Auto)
@@ -62,6 +63,7 @@ VPN_SERVER="Auto 12 → [🚀 Оптимальная]" python3 scripts/vpn-confi
 |---|---|
 | `telegram-bot` | `api.telegram.org` заблокирован |
 | `proactive` | Telegram + внешние API брифинга |
+| `llm-gateway` | OpenRouter отвечает «Access denied by security policy» с российского IP |
 
 Добавить ещё сервис — две строки в `docker-compose.yml`:
 
