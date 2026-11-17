@@ -148,5 +148,5 @@ renew-certs: ## Продлить сертификаты Let's Encrypt и пер�
 	./scripts/renew-certs.sh
 
 owner-creds: ## Показать логин и пароль владельца (секрет!)
-	@echo "Логин: admin"
+	@echo "Логин: $$(sudo grep '^EMAIL=' $(DATA_ROOT)/secrets/webui-owner.txt | cut -d= -f2-)"
 	@echo "Пароль: $$(sudo grep '^PASSWORD=' $(DATA_ROOT)/secrets/webui-owner.txt | cut -d= -f2-)"
