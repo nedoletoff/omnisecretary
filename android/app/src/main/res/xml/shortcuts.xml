@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="voice"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_voice">
+        <intent
+            android:action="ru.nedoletoff.omnisecretary.VOICE"
+            android:targetPackage="ru.nedoletoff.omnisecretary"
+            android:targetClass="ru.nedoletoff.omnisecretary.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="today"
+        android:enabled="true"
+        android:shortcutShortLabel="@string/shortcut_today">
+        <intent
+            android:action="ru.nedoletoff.omnisecretary.TODAY"
+            android:targetPackage="ru.nedoletoff.omnisecretary"
+            android:targetClass="ru.nedoletoff.omnisecretary.MainActivity" />
+    </shortcut>
+</shortcuts>

@@ -454,6 +454,12 @@ services:
       REGISTER_TOKEN: ${REGISTER_TOKEN:-}
       TELEGRAM_CONFIRM_CODE: ${TELEGRAM_CONFIRM_CODE:-}
       WEATHER_CITY: ${WEATHER_CITY:-}
+      STT_URL: http://stt:8000
+      TTS_URL: http://tts:8000
+      VAULT_MANAGER_URL: http://vault-manager:8000
+      VIKUNJA_BASE_URL: http://vikunja:3456
+      VIKUNJA_API_TOKEN: ${VIKUNJA_API_TOKEN:-}
+      TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
       TZ: ${TZ:-UTC}
     volumes:
       - ./portal:/app/portal:ro
@@ -461,7 +467,8 @@ services:
       - ${DATA_ROOT}/secrets:/secrets:ro
       - ${DATA_ROOT}/bot:/bot
       - ${DATA_ROOT}/status:/status:ro
-    networks: [frontend]
+    # backend нужен для STT/TTS и Vikunja; наружу портал не публикуется.
+    networks: [frontend, backend]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
       interval: 30s

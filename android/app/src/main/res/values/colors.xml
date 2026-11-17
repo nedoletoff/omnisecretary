@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="gruvbox_bg">#282828</color>
+    <color name="gruvbox_bg1">#3C3836</color>
+    <color name="gruvbox_fg">#EBDBB2</color>
+    <color name="gruvbox_yellow">#D79921</color>
+</resources>

@@ -920,3 +920,10 @@ try:
     migrate_tokens()
 except Exception:  # noqa: BLE001 — портал должен подняться даже при сбое миграции
     pass
+
+
+# ── Мобильный API ────────────────────────────────────────────────────────
+# Отдельный модуль: клиент приложения ходит с Bearer-токеном Open WebUI.
+from mobile_api import router as mobile_router  # noqa: E402
+
+app.include_router(mobile_router)

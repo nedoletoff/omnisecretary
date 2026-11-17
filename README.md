@@ -294,7 +294,7 @@ make logs       # логи
 | [docs/vpn.md](docs/vpn.md) | VPN-прокси, выбор сервера, трафик |
 | [docs/quick-access.md](docs/quick-access.md) | календарь и заметки на отдельном домене |
 | [docs/rootless.md](docs/rootless.md) | rootless Docker: как устроен, владельцы томов, сертификаты, откат |
-| [docs/mobile-android.md](docs/mobile-android.md) | ТЗ Android-приложения: архитектура, экраны, этапы |
+| [docs/mobile-android.md](docs/mobile-android.md) | Android-клиент: ТЗ, этапы, сборка APK |
 | [docs/operations.md](docs/operations.md) | бэкапы, обновления, переезд на диск |
 | [docs/decisions.md](docs/decisions.md) | принятые решения и допущения (ADR) |
 | [docs/plan.md](docs/plan.md) | этапы и критерии перехода |

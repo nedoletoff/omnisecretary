@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import secrets
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -98,7 +100,9 @@ def git(*args: str, check: bool = False, timeout: int = 300) -> subprocess.Compl
         env["GIT_CONFIG_VALUE_0"] = f"AUTHORIZATION: basic {basic}"
     env["GIT_TERMINAL_PROMPT"] = "0"
     return subprocess.run(
-        ["git", "-c", f"safe.directory={VAULT_DIR}", *args],
+        ["git", "-c", f"safe.directory={VAULT_DIR}",
+         "-c", "user.name=OmniSecretary",
+         "-c", "user.email=ai@omnisecretary.local", *args],
         cwd=str(VAULT_DIR) if VAULT_DIR.is_dir() else None,
         capture_output=True, text=True, timeout=timeout, env=env,
     )
@@ -262,6 +266,53 @@ def sync(request: Request, csrf: str = Form(""),
 @app.get("/status")
 def status_json(_: str = Depends(auth)) -> JSONResponse:
     return JSONResponse(status())
+
+
+@app.post("/api/note")
+async def api_note(request: Request, _: str = Depends(auth)) -> JSONResponse:
+    """Запись заметки из мобильного клиента: только AI/, только по запросу.
+
+    Путь строим сами: папка из запроса (по умолчанию AI/Inbox), имя —
+    дата-время и слаг заголовка. Каждая запись — отдельный коммит и push,
+    поэтому история правок видна в Obsidian и на GitHub.
+    """
+    if not is_repo():
+        raise HTTPException(409, "вольт не подключён")
+    try:
+        data = await request.json()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(400, "нужен JSON")
+    text = str(data.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "пустой текст")
+    if len(text) > 200_000:
+        raise HTTPException(413, "слишком длинная заметка")
+    title = str(data.get("title") or "").strip()
+    folder = str(data.get("folder") or "AI/Inbox").strip().strip("/")
+    if not folder.startswith("AI/") and folder != "AI":
+        raise HTTPException(403, "писать можно только в AI/")
+
+    stamp = datetime.now().strftime("%Y-%m-%d-%H%M")
+    slug = re.sub(r"[^\w\-]+", "-", title.lower(), flags=re.UNICODE).strip("-")[:40]
+    name = f"{stamp}-{slug}.md" if slug else f"{stamp}.md"
+    target = VAULT_DIR / folder / name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    body = f"# {title}\n\n{text}\n" if title else text + "\n"
+    target.write_text(body, encoding="utf-8")
+
+    relative = str(target.relative_to(VAULT_DIR))
+    git("add", relative)
+    commit = git("commit", "-m", f"note: {title or name} (мобильный клиент)")
+    if commit.returncode != 0:
+        raise HTTPException(500, "не удалось создать коммит")
+    git("pull", "--rebase", "--autostash")
+    push = git("push")
+    return JSONResponse({
+        "path": relative,
+        "pushed": push.returncode == 0,
+        "commit": git("rev-parse", "--short", "HEAD").stdout.strip(),
+    })
+
 
 @app.get("/healthz")
 def healthz() -> JSONResponse:
