@@ -182,6 +182,15 @@ check_http "vault-manager /healthz" "http://127.0.0.1/vault/healthz" "200"
 check_http "vault-manager /vault/ (без авторизации)" "http://127.0.0.1/vault/" "401"
 check_http "portal /healthz" "http://127.0.0.1/portal/healthz" "200"
 check_http "portal /register" "http://127.0.0.1/portal/register" "200"
+check_http "portal /quick (без входа)" "http://127.0.0.1/portal/quick" "303"
+check_http "llm-gateway /healthz" "http://127.0.0.1:8088/healthz" "200"
+# Отдельный домен для календаря и заметок (сертификат и vhost).
+if curl -sk --max-time 10 --resolve nedoletoff.mooo.com:443:127.0.0.1 \
+        https://nedoletoff.mooo.com/healthz | grep -q ok; then
+    pass "mooo.com: HTTPS и vhost календаря"
+else
+    fail "mooo.com: HTTPS не отвечает"
+fi
 
 if [[ -f "$API_KEY_FILE" ]]; then
     api_key="$(grep -m1 '^WEBUI_API_KEY=' "$API_KEY_FILE" | cut -d= -f2-)"

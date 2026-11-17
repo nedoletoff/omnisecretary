@@ -17,7 +17,7 @@ import sqlite3
 import threading
 import time
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -168,8 +168,8 @@ def sign(payload: str) -> str:
     return base64.urlsafe_b64encode(digest).decode().rstrip("=")
 
 
-def make_session(owui_id: str, username: str) -> str:
-    data = json.dumps({"uid": owui_id, "u": username,
+def make_session(owui_id: str, username: str, token: str = "") -> str:
+    data = json.dumps({"uid": owui_id, "u": username, "t": token,
                        "exp": int(time.time()) + SESSION_TTL})
     body = base64.urlsafe_b64encode(data.encode()).decode().rstrip("=")
     return f"{body}.{sign(body)}"
@@ -236,7 +236,8 @@ def esc(value: object) -> str:
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def page(title: str, body: str, message: str = "", error: bool = False) -> str:
+def page(title: str, body: str, message: str = "", error: bool = False,
+         wide: bool = False) -> str:
     notice = ""
     if message:
         color = "#fb4934" if error else "#b8bb26"
@@ -254,6 +255,7 @@ body {{ margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
        display:flex; align-items:center; justify-content:center; padding:24px; }}
 .card {{ width:100%; max-width:440px; background:var(--bg1);
         border:1px solid var(--bg2); border-radius:14px; padding:28px; }}
+.wide .card {{ max-width:980px; }}
 h1 {{ font-size:20px; margin:0 0 4px; }}
 h1 span {{ color:var(--yellow); }}
 p.sub {{ color:var(--gray); margin:0 0 20px; font-size:13px; }}
@@ -270,7 +272,7 @@ button:hover {{ filter:brightness(1.08); }}
   background:var(--bg); font-size:13px; }}
 a {{ color:var(--yellow); }}
 .foot {{ margin-top:18px; font-size:12px; color:var(--gray); text-align:center; }}
-</style></head><body><div class="card">
+</style></head><body{" class=\"wide\"" if wide else ""}><div class="card">
 <h1><span>Omni</span>Secretary</h1>
 <p class="sub">{esc(title)}</p>{notice}{body}
 </div></body></html>"""
@@ -486,9 +488,181 @@ location.replace("/");
 </script>
 <noscript><a href="/">Открыть OmniSecretary</a></noscript>"""
     response = HTMLResponse(page("Вход", body))
-    response.set_cookie("portal_session", make_session(owui_id, username),
+    response.set_cookie("portal_session", make_session(owui_id, username, token),
                         max_age=SESSION_TTL, httponly=True, samesite="lax")
     return response
+
+
+def owui_call(token: str, method: str, path: str,
+              params: dict | None = None, body: dict | None = None):
+    """Запрос в Open WebUI от имени пользователя (его JWT из сессии)."""
+    with httpx.Client(timeout=25) as client:
+        response = client.request(method, OWUI_URL + path, params=params,
+                                  json=body,
+                                  headers={"Authorization": f"Bearer {token}"})
+        response.raise_for_status()
+        return response.json() if response.content else {}
+
+
+def quick_page(session: dict, message: str = "", error: bool = False) -> HTMLResponse:
+    token = session.get("t", "")
+    if not token:
+        return RedirectResponse("/portal/login", status_code=303)
+    today = datetime.now()
+    start = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=30)
+    try:
+        events = owui_call(token, "GET", "/api/v1/calendars/events", params={
+            "start": start.strftime("%Y-%m-%dT%H:%M:%S"),
+            "end": end.strftime("%Y-%m-%dT%H:%M:%S"),
+        })
+        notes = owui_call(token, "GET", "/api/v1/notes/")
+    except Exception as exc:  # noqa: BLE001
+        return HTMLResponse(page("Календарь и заметки", "", 
+                                 f"Open WebUI недоступен: {type(exc).__name__}", True,
+                                 wide=True), status_code=502)
+
+    rows = []
+    for event in sorted(events, key=lambda item: item.get("start_at", 0)):
+        moment = datetime.fromtimestamp(event["start_at"] / 1e9)
+        rows.append(
+            f'<tr><td>{moment:%d.%m %H:%M}</td><td>{esc(event.get("title", ""))}</td>'
+            f'<td class="dim">{esc(event.get("description") or "")}</td>'
+            f'<td><form method="post" action="/portal/quick/event/delete">'
+            f'<input type="hidden" name="csrf" value="{csrf_token()}">'
+            f'<input type="hidden" name="id" value="{esc(event["id"])}">'
+            f'<button class="link">удалить</button></form></td></tr>')
+    event_table = ("<table><tr><th>Когда</th><th>Событие</th><th>Описание</th><th></th></tr>"
+                   + "".join(rows) + "</table>") if rows else "<p class=dim>Событий нет.</p>"
+
+    note_rows = []
+    for note in notes[:50]:
+        content = ((note.get("data") or {}).get("content") or {}).get("md", "")
+        note_rows.append(
+            f'<tr><td>{esc(note.get("title", "без названия"))}</td>'
+            f'<td class="dim">{esc(content[:160])}</td>'
+            f'<td><form method="post" action="/portal/quick/note/delete">'
+            f'<input type="hidden" name="csrf" value="{csrf_token()}">'
+            f'<input type="hidden" name="id" value="{esc(note["id"])}">'
+            f'<button class="link">удалить</button></form></td></tr>')
+    note_table = ("<table><tr><th>Заметка</th><th>Текст</th><th></th></tr>"
+                  + "".join(note_rows) + "</table>") if note_rows else \
+                 "<p class=dim>Заметок нет.</p>"
+
+    body = f"""
+<p class="sub">Вошли как <b>{esc(session.get("u", ""))}</b> · <a href="/portal/account">настройки</a></p>
+<h2>Календарь</h2>
+{event_table}
+<form method="post" action="/portal/quick/event" class="row">
+  <input type="hidden" name="csrf" value="{csrf_token()}">
+  <input name="title" placeholder="Событие" required>
+  <input type="date" name="date" value="{start:%Y-%m-%d}" required>
+  <input type="time" name="time" value="10:00" required>
+  <select name="minutes"><option value="30">30 мин</option>
+    <option value="60" selected>1 час</option><option value="120">2 часа</option></select>
+  <button type="submit">Добавить</button>
+</form>
+<h2>Заметки</h2>
+{note_table}
+<form method="post" action="/portal/quick/note">
+  <input type="hidden" name="csrf" value="{csrf_token()}">
+  <input name="title" placeholder="Заголовок" required>
+  <textarea name="text" rows="4" placeholder="Текст заметки"></textarea>
+  <button type="submit">Сохранить</button>
+</form>"""
+    extra_css = """
+<style>
+h2 { font-size:14px; text-transform:uppercase; letter-spacing:.08em;
+     color:var(--yellow); margin:26px 0 10px; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--bg2); vertical-align:top; }
+th { color:var(--gray); font-weight:400; font-size:12px; }
+.dim { color:var(--gray); }
+.row { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+.row input, .row select { flex:1; min-width:120px; }
+button { padding:10px 16px; border-radius:8px; border:1px solid var(--bg2);
+         background:var(--bg2); color:var(--fg); font:inherit; cursor:pointer; }
+button:hover { border-color:var(--yellow); }
+button.link { background:none; border:none; color:var(--gray); padding:0; }
+textarea { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--bg2);
+           background:var(--bg); color:var(--fg); font:inherit; }
+</style>"""
+    return HTMLResponse(page("Календарь и заметки", extra_css + body, message, error, wide=True))
+
+
+@app.get("/quick", response_class=HTMLResponse)
+def quick(request: Request):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    return quick_page(session)
+
+
+@app.post("/quick/event", response_class=HTMLResponse)
+def quick_event(request: Request, title: str = Form(""), date: str = Form(""),
+                time: str = Form("10:00"), minutes: int = Form(60),
+                csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return quick_page(session, "Форма устарела, обновите страницу.", True)
+    token = session.get("t", "")
+    try:
+        moment = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+        calendars = owui_call(token, "GET", "/api/v1/calendars/")
+        calendar_id = calendars[0]["id"]
+        owui_call(token, "POST", "/api/v1/calendars/events/create", body={
+            "calendar_id": calendar_id, "title": title.strip(),
+            "description": "", "location": "", "all_day": False,
+            "start_at": int(moment.timestamp() * 1e9),
+            "end_at": int((moment + timedelta(minutes=minutes)).timestamp() * 1e9),
+        })
+    except Exception as exc:  # noqa: BLE001
+        return quick_page(session, f"Не удалось создать событие: {type(exc).__name__}", True)
+    return RedirectResponse("/portal/quick", status_code=303)
+
+
+@app.post("/quick/event/delete", response_class=HTMLResponse)
+def quick_event_delete(request: Request, id: str = Form(""), csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if csrf_ok(csrf):
+        try:
+            owui_call(session.get("t", ""), "DELETE", f"/api/v1/calendars/events/{id}/delete")
+        except Exception:  # noqa: BLE001
+            pass
+    return RedirectResponse("/portal/quick", status_code=303)
+
+
+@app.post("/quick/note", response_class=HTMLResponse)
+def quick_note(request: Request, title: str = Form(""), text: str = Form(""),
+               csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return quick_page(session, "Форма устарела, обновите страницу.", True)
+    try:
+        owui_call(session.get("t", ""), "POST", "/api/v1/notes/create", body={
+            "title": title.strip(), "data": {"content": {"md": text}}})
+    except Exception as exc:  # noqa: BLE001
+        return quick_page(session, f"Не удалось сохранить заметку: {type(exc).__name__}", True)
+    return RedirectResponse("/portal/quick", status_code=303)
+
+
+@app.post("/quick/note/delete", response_class=HTMLResponse)
+def quick_note_delete(request: Request, id: str = Form(""), csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if csrf_ok(csrf):
+        try:
+            owui_call(session.get("t", ""), "DELETE", f"/api/v1/notes/{id}/delete")
+        except Exception:  # noqa: BLE001
+            pass
+    return RedirectResponse("/portal/quick", status_code=303)
 
 
 @app.get("/admin/status", response_class=HTMLResponse)

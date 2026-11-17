@@ -41,7 +41,7 @@ ip -4 addr show | grep 'inet ' | grep -v 127.0.0.1
 
 1. Узнать MAC проводного интерфейса: `ip link show eth0`.
 2. Роутер → **Network → DHCP → Address Reservation**: закрепить
-   `192.168.0.133` за этим MAC.
+   `192.168.0.102` за этим MAC.
 3. Перезагрузить Pi и убедиться: `ip -4 addr show eth0`.
 
 ## Шаг 3. Virtual Servers (Archer C5 v4)
@@ -50,8 +50,8 @@ ip -4 addr show | grep 'inet ' | grep -v 127.0.0.1
 
 | Service Port (внешний) | Internal IP | Internal Port | Protocol |
 |---|---|---|---|
-| 80 | 192.168.0.133 | 80 | TCP |
-| 443 | 192.168.0.133 | 443 | TCP |
+| 80 | 192.168.0.102 | 80 | TCP |
+| 443 | 192.168.0.102 | 443 | TCP |
 
 Важно:
 

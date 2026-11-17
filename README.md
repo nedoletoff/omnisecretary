@@ -18,7 +18,10 @@ OpenAI-совместимые API; эмбеддинги для памяти сч
 | 5 | Голос: Vosk-модель (sherpa-onnx) + Silero TTS, Piper как альтернатива | ✅ запущено и проверено |
 | 6 | Проактивность: утренний брифинг, напоминания, PWA | ✅ брифинг отправляется в Telegram |
 | 7 | Эксплуатация: HTTPS, бэкапы, мониторинг, напоминания | ✅ HTTPS выпущен и работает |
-| 8 | VPN-прокси для заблокированных сервисов (Telegram) | ✅ работает (`make vpn-test`) |
+| 8 | VPN-прокси для заблокированных сервисов (Telegram) | ✅ Xray, пул серверов (`make vpn-test`) |
+| 9 | LLM-шлюз: OpenRouter с откатом на бесплатную модель | ✅ `omni-auto` |
+| 10 | Быстрый доступ к календарю и заметкам: nedoletoff.mooo.com | ✅ HTTPS, вход теми же аккаунтами |
+| 11 | Rootless Docker | ⚙️ демон установлен и проверен, стек пока rootful (`docs/rootless.md`) |
 
 Подробный план и критерии перехода между этапами — [docs/plan.md](docs/plan.md).
 
@@ -74,10 +77,15 @@ make vikunja-admin
 make mcp-build && make mcp-init
 ```
 
-По умолчанию в `.env.example` уже прописана **бесплатная тестовая модель**
-(Pollinations, без ключа). Ограничение бесплатного тарифа — 1 ответ в 45
-секунд на IP (при превышении HTTP 402 `FREE_LIMIT`). Для продакшна замените
-`OPENAI_API_BASE_URL` и `OPENAI_API_KEY` на своего провайдера и выполните
+По умолчанию трафик идёт через **llm-gateway**: сначала OpenRouter
+(`OPENROUTER_KEY`, модель `OPENROUTER_MODEL`), а при 401/402/429/5xx —
+бесплатная модель Pollinations. В интерфейсе это модели `omni-auto`
+(с откатом), `omni-free` (только бесплатная) и `omni-openrouter`.
+Бесплатная модель отвечает не чаще раза в 45 секунд на IP.
+
+Если ключа OpenRouter нет, `omni-auto` работает как бесплатная. Свой
+OpenAI-совместимый провайдер можно подключить, заменив
+`OPENAI_API_BASE_URL` и `OPENAI_API_KEY` в `.env`, затем
 `make restart && make init-webui`.
 
 `make init-webui` идемпотентен: повторный запуск не дублирует пользователя
@@ -141,7 +149,7 @@ Obsidian, поиск, GitHub, голос, брифинг), соблюдает п
 
 ### 1. Веб-интерфейс
 
-- Адрес: **https://nedoletoff.sknt.ru** (в LAN: `http://192.168.0.133`).
+- Адрес: **https://nedoletoff.sknt.ru** (в LAN: `http://192.168.0.102`).
 - Логин: **`nedoletoff`**. Поле подписано «Email», но принимает логин — почта не нужна.
 - Пароль:
 
@@ -178,10 +186,10 @@ Obsidian, поиск, GitHub, голос, брифинг), соблюдает п
 
 ### 4. Задачи (Vikunja)
 
-- Адрес: **http://192.168.0.133:8081** (наружу не пробрасывается).
+- Адрес: **http://192.168.0.102:8081** (наружу не пробрасывается).
 - Логин `admin`, пароль — `/srv/omnisecretary/secrets/vikunja-admin.txt`.
   Смените пароль в интерфейсе и удалите файл.
-- CalDAV для телефона: `http://192.168.0.133:8081/dav/`.
+- CalDAV для телефона: `http://192.168.0.102:8081/dav/`.
 - Календарь событий — раздел «Календарь» в Open WebUI.
 
 Подробно: [docs/calendar-tasks.md](docs/calendar-tasks.md).
@@ -280,6 +288,8 @@ make logs       # логи
 | [docs/search.md](docs/search.md) | веб-поиск, движки, экономия токенов |
 | [docs/router.md](docs/router.md) | роутер, порты, DNS, HTTPS, сертификаты |
 | [docs/vpn.md](docs/vpn.md) | VPN-прокси, выбор сервера, трафик |
+| [docs/quick-access.md](docs/quick-access.md) | календарь и заметки на отдельном домене |
+| [docs/rootless.md](docs/rootless.md) | rootless Docker: состояние и план переезда |
 | [docs/operations.md](docs/operations.md) | бэкапы, обновления, переезд на диск |
 | [docs/decisions.md](docs/decisions.md) | принятые решения и допущения (ADR) |
 | [docs/plan.md](docs/plan.md) | этапы и критерии перехода |

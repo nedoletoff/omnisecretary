@@ -57,6 +57,43 @@ services:
   # ─────────────────────────────────────────────────────────────
   # Ядро: Open WebUI. Один бэкенд для веба, Telegram и API.
   # ─────────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────────────────────
+  # LLM-шлюз: OpenRouter с откатом на бесплатную модель.
+  # Open WebUI ходит сюда как в обычный OpenAI API; если у OpenRouter
+  # кончился баланс или ключ отозван — отвечает бесплатная модель.
+  # ─────────────────────────────────────────────────────────────
+  llm-gateway:
+    image: omnisecretary-mcp:local
+    container_name: omni-llm-gateway
+    command: ["uvicorn", "gateway:app", "--host", "0.0.0.0", "--port", "8080",
+              "--app-dir", "/app/llm"]
+    restart: unless-stopped
+    environment:
+      OPENROUTER_KEY: ${OPENROUTER_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openai/gpt-4o-mini}
+      OPENROUTER_BASE: ${OPENROUTER_BASE:-https://openrouter.ai/api/v1}
+      FALLBACK_BASE: ${FALLBACK_BASE:-https://text.pollinations.ai/openai}
+      FALLBACK_MODEL: ${FALLBACK_MODEL:-openai-fast}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      NO_PROXY: "*"
+    volumes:
+      - ./llm:/app/llm:ro
+    networks:
+      - backend
+    ports:
+      # Только для smoke-тестов с хоста; в LAN и наружу не выставлен.
+      - "127.0.0.1:8088:8080"
+    mem_limit: 96m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.13.3
     container_name: omni-open-webui

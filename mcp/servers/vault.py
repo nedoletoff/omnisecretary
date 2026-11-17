@@ -100,8 +100,13 @@ def _push_loop() -> None:
         with _push_lock:
             result = git("push", check=False)
             if result.returncode != 0:
-                # Нет remote или сети — коммит остаётся локально.
-                print(f"[vault] push не удался: {result.stderr.strip()[:300]}", flush=True)
+                # Кто-то (например, Obsidian на телефоне) мог запушить раньше:
+                # подтягиваем с rebase и пробуем снова, иначе коммит застрянет.
+                pull = git("pull", "--rebase", "--autostash", check=False)
+                if pull.returncode == 0:
+                    result = git("push", check=False)
+                if result.returncode != 0:
+                    print(f"[vault] push не удался: {result.stderr.strip()[:300]}", flush=True)
 
 
 threading.Thread(target=_push_loop, daemon=True).start()

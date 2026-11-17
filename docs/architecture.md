@@ -29,7 +29,7 @@
 | Сеть | Кто в ней | Наружу |
 |---|---|---|
 | `frontend` | nginx, open-webui, vikunja, vault-manager, portal | nginx публикует 80/443/8081 |
-| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init, mcp-sandbox, vpn, portal-боты | нет (Qdrant — только 127.0.0.1:6333, VPN-прокси — 127.0.0.1:2080) |
+| `backend` | open-webui, vikunja, postgres, qdrant, redis, db-init, mcp-sandbox, vpn, llm-gateway, portal | нет (Qdrant — только 127.0.0.1:6333, VPN-прокси — 127.0.0.1:2080) |
 | `mcp` | open-webui, vikunja, mcp-vault, mcp-files, mcp-github, mcp-vikunja | нет. Песочницы здесь нет — изоляция от токенов |
 
 nginx не имеет доступа к БД. Postgres/Qdrant/Redis не видны из LAN.
@@ -45,7 +45,8 @@ Vikunja стоит в трёх сетях: nginx проксирует её че�
 | 8081 | nginx → Vikunja | `0.0.0.0` (только LAN, наружу не пробрасывать) |
 | 6333 | Qdrant | `127.0.0.1` (snapshot API для бэкапов) |
 | 2080/2081 | VPN-прокси Xray | `127.0.0.1` (HTTP CONNECT / SOCKS5) |
-| 8000 | portal (регистрация/настройки) | нет, только через nginx `/portal/` |
+| 8000 | portal (регистрация/настройки/календарь) | нет, только через nginx `/portal/` |
+| 8088 | llm-gateway (OpenRouter → бесплатная) | `127.0.0.1` (для smoke) |
 | 5432 | PostgreSQL | только сеть `backend` |
 | 6379 | Redis | только сеть `backend`, требуется пароль |
 | 8080 | Open WebUI | только сеть `frontend` |
@@ -156,7 +157,7 @@ LLM решает вызвать инструмент → open-webui (`/mcp`, str
 
 ## Внешний доступ
 
-Вариант A — только LAN: `http://192.168.0.133`, без TLS (данные в своей сети).
+Вариант A — только LAN: `http://192.168.0.102`, без TLS (данные в своей сети).
 
 Вариант B — Cloudflare Tunnel (cloudflared уже установлен на хосте):
 `cloudflared tunnel --url http://127.0.0.1:80` или именованный туннель с доменом.
