@@ -21,7 +21,7 @@ OpenAI-совместимые API; эмбеддинги для памяти сч
 | 8 | VPN-прокси для заблокированных сервисов (Telegram) | ✅ Xray, пул серверов (`make vpn-test`) |
 | 9 | LLM-шлюз: OpenRouter с откатом на бесплатную модель | ✅ `omni-auto` |
 | 10 | Быстрый доступ к календарю и заметкам: nedoletoff.mooo.com | ✅ HTTPS, вход теми же аккаунтами |
-| 11 | Rootless Docker | ⚙️ демон установлен и проверен, стек пока rootful (`docs/rootless.md`) |
+| 11 | Rootless Docker | ✅ стек переехал, rootful отключён (`docs/rootless.md`) |
 
 Подробный план и критерии перехода между этапами — [docs/plan.md](docs/plan.md).
 
@@ -271,8 +271,10 @@ make logs       # логи
 | Пароль формы вольта | `secrets/vault-admin.txt`; `.env` → `VAULT_ADMIN_PASSWORD` |
 | API-ключ Open WebUI (для `make presets`) | `/srv/omnisecretary/secrets/webui-api-key.txt` |
 | GitHub PAT вольта | создаётся формой `/vault/` → `secrets/vault-git-token` |
-| Все секреты | `.env` (600, в git не попадает) |
+| Все секреты | `/srv/omnisecretary/secrets/` (600) и `.env` (600, в git не попадает) |
 | Данные | `/srv/omnisecretary` (`DATA_ROOT`) |
+| Тома контейнеров | `/srv/omnisecretary/rootless/volumes` (`VOLUMES_ROOT`) |
+| Сертификаты | `/srv/omnisecretary/letsencrypt`, копия для nginx — `nginx/certs/` |
 
 ## Документация: что где лежит
 
@@ -291,7 +293,7 @@ make logs       # логи
 | [docs/router.md](docs/router.md) | роутер, порты, DNS, HTTPS, сертификаты |
 | [docs/vpn.md](docs/vpn.md) | VPN-прокси, выбор сервера, трафик |
 | [docs/quick-access.md](docs/quick-access.md) | календарь и заметки на отдельном домене |
-| [docs/rootless.md](docs/rootless.md) | rootless Docker: состояние и план переезда |
+| [docs/rootless.md](docs/rootless.md) | rootless Docker: как устроен, владельцы томов, сертификаты, откат |
 | [docs/operations.md](docs/operations.md) | бэкапы, обновления, переезд на диск |
 | [docs/decisions.md](docs/decisions.md) | принятые решения и допущения (ADR) |
 | [docs/plan.md](docs/plan.md) | этапы и критерии перехода |

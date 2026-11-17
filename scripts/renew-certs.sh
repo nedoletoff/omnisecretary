@@ -1,23 +1,32 @@
 #!/usr/bin/env bash
-# Продление сертификатов Let's Encrypt и перезагрузка nginx.
-# Запускать по cron/systemd-timer (пример в docs/router.md).
-# Требует sudo для docker и чтения /etc/letsencrypt.
-set -Eeuo pipefail
+# Продление сертификатов Let's Encrypt без rootful Docker.
+#
+# Сертификаты живут в ${DATA_ROOT}/letsencrypt (владелец — пользователь),
+# поэтому rootless-демон может их читать и писать. После продления копия
+# кладётся в nginx/certs (см. sync-certs.sh) — её читает контейнер nginx.
+set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT_DIR"
+source "${ROOT_DIR}/scripts/lib/common.sh"
 
-echo "[1/2] certbot renew"
-sudo docker run --rm \
-    -v /etc/letsencrypt:/etc/letsencrypt \
-    -v /var/lib/letsencrypt:/var/lib/letsencrypt \
-    -v "$ROOT_DIR/nginx/www:/var/www/certbot" \
-    certbot/certbot renew --webroot -w /var/www/certbot --quiet
+load_env
+detect_docker
 
-echo "[2/2] reload nginx"
-if sudo docker ps --format '{{.Names}}' | grep -qx omni-nginx; then
-    sudo docker exec omni-nginx nginx -s reload
-    echo "nginx перезагружен"
-else
-    echo "контейнер omni-nginx не запущен — пропускаю reload"
+LE_ROOT="${DATA_ROOT}/letsencrypt"
+WEBROOT="${ROOT_DIR}/nginx/www"
+
+[[ -d "$LE_ROOT/live" ]] || { log_err "нет ${LE_ROOT}/live"; exit 1; }
+
+"${DOCKER[@]}" run --rm \
+    -v "${LE_ROOT}:/etc/letsencrypt" \
+    -v "${WEBROOT}:/var/www/certbot" \
+    certbot/certbot:v5.10.0 renew \
+        --webroot -w /var/www/certbot \
+        --quiet --no-random-sleep-on-renew
+
+"${ROOT_DIR}/scripts/sync-certs.sh" >/dev/null
+
+if "${DOCKER[@]}" ps --format '{{.Names}}' | grep -qx omni-nginx; then
+    "${DOCKER[@]}" exec omni-nginx nginx -s reload
+    log_ok "nginx перезагружен с новыми сертификатами"
 fi

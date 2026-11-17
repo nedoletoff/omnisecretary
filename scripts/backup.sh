@@ -64,7 +64,10 @@ else
             -H "api-key: ${QDRANT_API_KEY}" \
             "http://127.0.0.1:6333/collections/${col}/snapshots" \
             | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["name"])')"
-        "${DOCKER[@]}" cp "omni-qdrant:/qdrant/snapshots/${snap}" "$DEST/" >/dev/null
+        # Qdrant кладёт снапшот в подкаталог коллекции, а не в корень.
+        src="$("${DOCKER[@]}" exec omni-qdrant sh -c "find /qdrant/snapshots -name '${snap}' -type f | head -1" | tr -d '\r')"
+        [[ -n "$src" ]] || { log_err "Qdrant: снапшот ${snap} не найден"; continue; }
+        "${DOCKER[@]}" cp "omni-qdrant:${src}" "$DEST/" >/dev/null
         curl -fsS -X DELETE -H "api-key: ${QDRANT_API_KEY}" \
             "http://127.0.0.1:6333/collections/${col}/snapshots/${snap}" >/dev/null || true
         log_ok "Qdrant: $col → $snap"

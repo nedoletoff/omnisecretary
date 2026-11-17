@@ -47,6 +47,7 @@ Vikunja стоит в трёх сетях: nginx проксирует её че�
 | 2080/2081 | VPN-прокси Xray | `127.0.0.1` (HTTP CONNECT / SOCKS5) |
 | 8000 | portal (регистрация/настройки/календарь) | нет, только через nginx `/portal/` |
 | 8088 | llm-gateway (OpenRouter → бесплатная) | `127.0.0.1` (для smoke) |
+| — | Docker | rootless, data-root `/srv/omnisecretary/rootless/docker` |
 | 5432 | PostgreSQL | только сеть `backend` |
 | 6379 | Redis | только сеть `backend`, требуется пароль |
 | 8080 | Open WebUI | только сеть `frontend` |

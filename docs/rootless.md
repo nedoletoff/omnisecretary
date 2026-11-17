@@ -1,97 +1,92 @@
-# Rootless Docker: состояние и план переезда
+# Rootless Docker: выполнено
 
-Rootless-демон уже установлен и проверен, но **рабочий стек пока остаётся на
-rootful Docker**. Это осознанно: переезд требует остановки сервисов и
-переноса томов, а сервис нужен каждый день. Ниже — что сделано, что
-проверено и как переехать без потери данных.
+Стек работает на **rootless** Docker. Rootful-демон отключён
+(`systemctl disable --now docker.service docker.socket`), данные и образы
+rootful сохранены — это точка отката.
 
-## Что уже сделано
+## Как устроено
 
-```bash
-uidmap                                   # установлен (newuidmap/newgidmap)
-dockerd-rootless-setuptool.sh install    # демон для пользователя nedoletoff
-loginctl enable-linger nedoletoff        # стартует без входа в сессию
-sysctl net.ipv4.ip_unprivileged_port_start=80
+```
+systemd --user docker.service (пользователь nedoletoff, linger включён)
+  data-root: /srv/omnisecretary/rootless/docker
+  тома:      /srv/omnisecretary/rootless/volumes
+  порты 80/443: разрешены через net.ipv4.ip_unprivileged_port_start=80
 ```
 
-Проверка rootless-демона:
+Клиент `docker` по умолчанию использует контекст `rootless`:
 
 ```bash
-XDG_RUNTIME_DIR=/run/user/1000 docker context use rootless
-docker info --format '{{.SecurityOptions}} {{.DockerRootDir}}'
-# [name=rootless ...] /home/nedoletoff/.local/share/docker
-docker run --rm --network none alpine:3.22 echo "rootless ok"
+docker context ls          # * rootless
+docker info --format '{{.DockerRootDir}} {{.SecurityOptions}}'
 ```
 
-Рабочий контекст возвращён на `default` (rootful), чтобы `docker`/`make`
-продолжали работать как раньше. Rootless доступен явно:
+`make`, `scripts/*.sh` и cron работают без `sudo`.
+
+## Отображение пользователей (важно при переносе томов)
+
+Rootless-демон использует subuid-диапазон `/etc/subuid`:
+
+| uid в контейнере | владелец на хосте | Кто это |
+|---|---|---|
+| 0 | 1000 (`nedoletoff`) | большинство образов |
+| 999 | 100998 | postgres, redis |
+| 1000 | 100999 | vikunja |
+
+Если том переносится или создаётся заново, владельца нужно ставить по этой
+таблице, иначе контейнер получит `Permission denied`:
 
 ```bash
-docker context use rootless     # переключиться
-docker context use default      # вернуться
+sudo chown -R 1000:1000  /srv/omnisecretary/rootless/volumes
+sudo chown -R 100998:100998 /srv/omnisecretary/rootless/volumes/postgres \
+                             /srv/omnisecretary/rootless/volumes/redis
+sudo chown -R 100999:100999 /srv/omnisecretary/rootless/volumes/vikunja
+sudo chmod 700 /srv/omnisecretary/rootless/volumes/postgres
 ```
 
-## Почему не переключили сразу
+## Сертификаты
 
-| Риск | Что значит |
-|---|---|
-| Тома | данные postgres/qdrant/openwebui принадлежат root и uid 999; в rootless их нужно переносить и менять владельца на subuid (100999) |
-| Порты 80/443 | rootless может их слушать только при `ip_unprivileged_port_start=80` (уже включено) |
-| Сертификаты | `/etc/letsencrypt` читается rootless-демоном только если файлы доступны пользователю |
-| Простой | перенос ~22 ГБ томов и проверка всех 20 контейнеров — 30–60 минут |
-| Откат | нужен старый data-root и compose до переезда |
+Rootless-демон не читает `/etc/letsencrypt` (каталог root-only). Поэтому:
 
-## План переезда (окно 1 час)
+1. сертификаты живут в `/srv/omnisecretary/letsencrypt` (владелец —
+   `nedoletoff`), туда пишет certbot в контейнере;
+2. `scripts/sync-certs.sh` копирует `fullchain.pem`/`privkey.pem` в
+   `nginx/certs/<домен>/` (права 600, владелец — пользователь);
+3. nginx читает их из `/etc/nginx/certs/...`.
+
+Продление: `make renew-certs` (cron `/etc/cron.d/omnisecretary-renew`,
+ежедневно в 03:17 от пользователя `nedoletoff`).
+
+## Секреты и доступные каталоги
+
+| Каталог | Владелец | Кто пишет |
+|---|---|---|
+| `secrets/` | `nedoletoff`, ACL на чтение для контейнеров | скрипты, вручную |
+| `vault/`, `vault-index/`, `bot/`, `portal/`, `status/`, `shared/` | `nedoletoff` | контейнеры (uid 0 → 1000) |
+| `rootless/volumes/*` | по таблице выше | контейнеры |
+
+`docker.sock` в контейнеры не монтируется, `cap_drop: ALL` сохранён.
+
+## Проверка после перезагрузки
 
 ```bash
-# 1. Бэкап и стоп
-make backup
-sudo docker compose down
-
-# 2. Копия data-root в домашний каталог пользователя
-sudo rsync -aH --info=progress2 /srv/omnisecretary/docker/ \
-     /home/nedoletoff/.local/share/docker-rootless/
-
-# 3. Владельцы томов: контейнерный root → subuid
-#    uid 999 (postgres) → 100999, остальное — 100000:100000
-sudo chown -R 100000:100000 /home/nedoletoff/.local/share/docker-rootless
-sudo chown -R 100999:100999 /home/nedoletoff/.local/share/docker-rootless/volumes/postgres_data
-
-# 4. Конфиг демона
-mkdir -p ~/.config/docker
-cat > ~/.config/docker/daemon.json <<'JSON'
-{ "data-root": "/home/nedoletoff/.local/share/docker-rootless" }
-JSON
-systemctl --user restart docker
-
-# 5. Запуск стека в rootless-контексте
-docker context use rootless
-cd /opt/omnisecretary && docker compose up -d
-
-# 6. Проверка
-./scripts/smoke-test.sh
+systemctl --user is-active docker     # active
+docker ps --format '{{.Names}}'       # 20 контейнеров
+make smoke                            # 48/48
 ```
 
-Если что-то не поднялось — откат:
+Linger включён (`loginctl enable-linger nedoletoff`), поэтому стек
+поднимается без входа в систему.
+
+## Откат на rootful (если понадобится)
 
 ```bash
+sudo systemctl enable --now docker.service docker.socket
 docker context use default
-cd /opt/omnisecretary && sudo docker compose up -d
+cd /opt/omnisecretary
+sudo docker compose --profile '*' up -d
 ```
 
-Данные в старом data-root остаются нетронутыми до удачного smoke-теста.
-
-## Что учесть в compose
-
-- `ports: "80:80"` работает при `ip_unprivileged_port_start=80`;
-- `cap_drop: ALL` в rootless почти всегда ок, но `DAC_OVERRIDE` может не
-  понадобиться;
-- монтирование `/etc/letsencrypt` должно быть доступно пользователю
-  (rootless-демон не может читать root-only файлы);
-- healthcheck'и и `restart: unless-stopped` работают как обычно.
-
-## Когда переезжать
-
-После того как вы закончите отладку функций и будет свободный час.
-Команда для проверки готовности: `make smoke` — 48 проверок должны быть
-зелёными и на rootful, и после переезда.
+Старые тома в `/srv/omnisecretary/volumes` не удалялись и не изменялись
+после копирования, поэтому откат возвращает состояние на момент миграции.
+Учтите: изменения, сделанные после переезда, останутся только в
+`rootless/volumes` — перед откатом скопируйте их обратно.

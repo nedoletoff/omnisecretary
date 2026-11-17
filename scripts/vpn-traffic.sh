@@ -17,12 +17,12 @@ LOG_FILE="$DATA_ROOT/logs/vpn-traffic.log"
 die() { echo "ошибка: $*" >&2; exit 1; }
 
 running() {
-    sudo docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"
+    docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"
 }
 
 counter() {
     # $1 = rx_bytes | tx_bytes
-    sudo docker exec "$CONTAINER" cat "/sys/class/net/eth0/statistics/$1" 2>/dev/null || echo 0
+    docker exec "$CONTAINER" cat "/sys/class/net/eth0/statistics/$1" 2>/dev/null || echo 0
 }
 
 human() {

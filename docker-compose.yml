@@ -196,7 +196,7 @@ services:
       WEB_SEARCH_TRUST_ENV: "false"
       TZ: ${TZ:-UTC}
     volumes:
-      - openwebui_data:/app/backend/data
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/openwebui:/app/backend/data
       # Тема Gruvbox. index.html подключает /static/custom.css до бандла;
       # статика раздаётся из /app/build/static (backend копирует её туда
       # при старте, поэтому монтировать в оба каталога нельзя — падает
@@ -243,7 +243,7 @@ services:
       PGDATA: /var/lib/postgresql/data/pgdata
       TZ: ${TZ:-UTC}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/postgres:/var/lib/postgresql/data
     networks:
       - backend
     healthcheck:
@@ -273,8 +273,8 @@ services:
       QDRANT__STORAGE__ON_DISK_PAYLOAD: "true"
       QDRANT__TELEMETRY_DISABLED: "true"
     volumes:
-      - qdrant_data:/qdrant/storage
-      - qdrant_snapshots:/qdrant/snapshots
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/qdrant:/qdrant/storage
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/qdrant-snapshots:/qdrant/snapshots
     # Только localhost: нужен для бэкапов (snapshot API) и smoke-тестов.
     ports:
       - "127.0.0.1:6333:6333"
@@ -314,7 +314,7 @@ services:
       - --requirepass
       - ${REDIS_PASSWORD}
     volumes:
-      - redis_data:/data
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/redis:/data
     networks:
       - backend
     environment:
@@ -388,7 +388,7 @@ services:
       VIKUNJA_LOG_LEVEL: INFO
       TZ: ${TZ:-UTC}
     volumes:
-      - vikunja_data:/app/vikunja/files
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/vikunja:/app/vikunja/files
     networks:
       # frontend — чтобы nginx мог проксировать; backend — доступ к postgres.
       - frontend
@@ -789,7 +789,7 @@ services:
     volumes:
       - ${DATA_ROOT}/vault:/vault:ro
       - ${DATA_ROOT}/bot:/data/bot:ro
-      - proactive_state:/state
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/proactive:/state
     networks:
       - backend
     mem_limit: 96m
@@ -813,49 +813,3 @@ networks:
   # Песочница: только внешний интернет, никаких внутренних сервисов.
   sandbox:
     driver: bridge
-
-volumes:
-  # Тома привязаны к каталогам на диске данных (DATA_ROOT),
-  # чтобы бэкап и перенос на внешний HDD были предсказуемыми.
-  postgres_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_ROOT}/volumes/postgres
-  qdrant_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_ROOT}/volumes/qdrant
-  qdrant_snapshots:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_ROOT}/volumes/qdrant-snapshots
-  redis_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_ROOT}/volumes/redis
-  openwebui_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_ROOT}/volumes/openwebui
-  vikunja_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_ROOT}/volumes/vikunja
-  proactive_state:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${DATA_ROOT}/volumes/proactive
