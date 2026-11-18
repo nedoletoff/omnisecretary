@@ -88,6 +88,7 @@ fun ChatScreen(
     title: String,
     draft: String,
     autoRecord: Boolean = false,
+    temporary: Boolean = false,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -165,7 +166,7 @@ fun ChatScreen(
         notice = ""
         scope.launch {
             try {
-                if (activeChatId.isBlank()) activeChatId = api.newChat()
+                if (activeChatId.isBlank()) activeChatId = api.newChat(temporary)
                 var answer = ""
                 api.stream(activeChatId, Session.model, history, text) { delta ->
                     answer += delta
@@ -237,9 +238,14 @@ fun ChatScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(title.ifBlank { "Чат" }, maxLines = 1)
-                        Text(Session.model, style = MaterialTheme.typography.labelSmall,
-                            color = GruvboxGray, maxLines = 1)
+                        Text(
+                            if (temporary) "Приватный чат" else title.ifBlank { "Чат" },
+                            maxLines = 1)
+                        Text(
+                            if (temporary) "не сохраняется" else Session.model,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (temporary) GruvboxAqua else GruvboxGray,
+                            maxLines = 1)
                     }
                 },
                 navigationIcon = {

@@ -85,8 +85,11 @@ class Api(private val server: String, private val token: String = "") {
         }.sortedByDescending { it.updated }
     }
 
-    suspend fun newChat(): String = withContext(Dispatchers.IO) {
-        call("/api/v1/chats/new", "POST", JSONObject()).optString("id")
+    suspend fun newChat(temporary: Boolean = false): String = withContext(Dispatchers.IO) {
+        val body = if (temporary) {
+            JSONObject().put("chat", JSONObject().put("temporary", true).put("title", "Приватный чат"))
+        } else JSONObject()
+        call("/api/v1/chats/new", "POST", body).optString("id")
     }
 
     suspend fun deleteChat(id: String) = withContext(Dispatchers.IO) {

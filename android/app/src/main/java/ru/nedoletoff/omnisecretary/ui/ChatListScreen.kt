@@ -40,6 +40,7 @@ fun ChatListScreen(
     reloadKey: Int,
     onOpen: (ChatSummary) -> Unit,
     onNewChat: () -> Unit,
+    onPrivateChat: () -> Unit = onNewChat,
 ) {
     var chats by remember { mutableStateOf<List<ChatSummary>>(emptyList()) }
     var busy by remember { mutableStateOf(true) }
@@ -61,40 +62,62 @@ fun ChatListScreen(
     LaunchedEffect(reloadKey) { reload() }
 
     Box(Modifier.fillMaxSize()) {
-        when {
-            busy && chats.isEmpty() -> CircularProgressIndicator(
-                Modifier.align(Alignment.Center))
-            error.isNotBlank() && chats.isEmpty() -> Text(
-                error, color = GruvboxRed, modifier = Modifier.align(Alignment.Center))
-            chats.isEmpty() -> Text(
-                "Чатов пока нет. Начните новый.",
-                color = GruvboxGray, modifier = Modifier.align(Alignment.Center))
-            else -> LazyColumn(Modifier.fillMaxSize()) {
-                items(chats, key = { it.id }) { chat ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onOpen(chat) }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(chat.title, style = MaterialTheme.typography.bodyLarge)
-                            Text("нажмите, чтобы открыть",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = GruvboxGray)
-                        }
-                        IconButton(onClick = {
-                            scope.launch {
-                                runCatching { api.deleteChat(chat.id) }
-                                reload()
-                            }
-                        }) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Удалить",
-                                tint = GruvboxGray)
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Чаты", style = MaterialTheme.typography.headlineSmall,
+                    color = GruvboxYellow, modifier = Modifier.weight(1f))
+                androidx.compose.material3.TextButton(onClick = onPrivateChat) {
+                    Text("Приватный", color = GruvboxAqua)
+                }
+            }
+            when {
+                busy && chats.isEmpty() -> Box(Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                error.isNotBlank() && chats.isEmpty() -> Box(Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(error, color = GruvboxRed)
+                        androidx.compose.material3.TextButton(onClick = { scope.launch { reload() } }) {
+                            Text("Повторить")
                         }
                     }
-                    HorizontalDivider(color = GruvboxBg2)
+                }
+                chats.isEmpty() -> Box(Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center) {
+                    Text("Чатов пока нет. Начните новый.", color = GruvboxGray)
+                }
+                else -> LazyColumn(Modifier.weight(1f)) {
+                    items(chats, key = { it.id }) { chat ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onOpen(chat) }
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(chat.title, style = MaterialTheme.typography.bodyLarge,
+                                    color = GruvboxFg)
+                                Text("нажмите, чтобы открыть",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = GruvboxGray)
+                            }
+                            IconButton(onClick = {
+                                scope.launch {
+                                    runCatching { api.deleteChat(chat.id) }
+                                    reload()
+                                }
+                            }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Удалить",
+                                    tint = GruvboxGray)
+                            }
+                        }
+                        HorizontalDivider(color = GruvboxBg2)
+                    }
                 }
             }
         }

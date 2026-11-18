@@ -197,6 +197,7 @@ private fun AppRoot(
     val api = remember(Session.server, Session.token) { Api(Session.server, Session.token) }
     var tab by remember { mutableIntStateOf(0) }
     var openChat by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var tempChat by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
     var autoRecord by remember { mutableStateOf(false) }
     var reloadChats by remember { mutableIntStateOf(0) }
@@ -212,11 +213,13 @@ private fun AppRoot(
         if (action.sharedText.isNotBlank()) {
             draft = action.sharedText
             autoRecord = false
+            tempChat = false
             tab = 0
             openChat = "" to "Новый чат"
         } else if (action.openVoice) {
             draft = ""
             autoRecord = true
+            tempChat = false
             tab = 0
             openChat = "" to "Голосовой запрос"
         }
@@ -238,10 +241,12 @@ private fun AppRoot(
             title = chat.second,
             draft = draft,
             autoRecord = autoRecord,
+            temporary = tempChat,
             onBack = {
                 openChat = null
                 draft = ""
                 autoRecord = false
+                tempChat = false
                 reloadChats++
             },
         )
@@ -273,12 +278,20 @@ private fun AppRoot(
                     onOpen = { summary ->
                         draft = ""
                         autoRecord = false
+                        tempChat = false
                         openChat = summary.id to summary.title
                     },
                     onNewChat = {
                         draft = ""
                         autoRecord = false
+                        tempChat = false
                         openChat = "" to "Новый чат"
+                    },
+                    onPrivateChat = {
+                        draft = ""
+                        autoRecord = false
+                        tempChat = true
+                        openChat = "" to "Приватный чат"
                     },
                 )
             }
