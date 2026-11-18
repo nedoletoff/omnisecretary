@@ -37,26 +37,43 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
     }
     var models by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var status by remember { mutableStateOf("") }
+    var statusError by remember { mutableStateOf("") }
     var appNotifications by remember {
         mutableStateOf(prefs.getBoolean("notify_app", true))
     }
     var telegramEcho by remember {
         mutableStateOf(prefs.getBoolean("notify_telegram", false))
     }
+    var biometric by remember {
+        mutableStateOf(prefs.getBoolean("biometric_lock", false))
+    }
 
     LaunchedEffect(Unit) {
         runCatching { api.models() }.onSuccess { models = it }
-        runCatching { api.status() }.onSuccess { body ->
-            val temp = body.optJSONObject("temperature")
-            val memory = body.optJSONObject("memory")
-            status = buildString {
-                if (temp != null) append("Температура: ${temp.opt("value")} °C\n")
-                if (memory != null) append("Память: ${memory.opt("used_mb")} / "
-                        + "${memory.opt("total_mb")} МБ\n")
-                body.optString("uptime").takeIf { it.isNotBlank() }
-                    ?.let { append("Uptime: $it\n") }
-            }.ifBlank { "Метрики недоступны" }
-        }
+        runCatching { api.status() }
+            .onSuccess { body ->
+                val temp = body.optJSONObject("temperature") ?: body.optJSONObject("temp")
+                val memory = body.optJSONObject("memory") ?: body.optJSONObject("mem")
+                val cpu = body.optJSONObject("cpu")
+                val load = body.opt("load")?.toString() ?: ""
+                status = buildString {
+                    temp?.opt("value")?.let { append("Температура: $it °C\n") }
+                    if (memory != null) {
+                        val used = memory.opt("used_mb", memory.opt("used", "?"))
+                        val total = memory.opt("total_mb", memory.opt("total", "?"))
+                        append("Память: $used / $total МБ\n")
+                    }
+                    cpu?.opt("percent")?.let { append("CPU: $it%\n") }
+                    if (load.isNotBlank() && load != "null") append("Load: $load\n")
+                    body.optString("uptime").takeIf { it.isNotBlank() }
+                        ?.let { append("Uptime: $it\n") }
+                    body.optJSONObject("disk")?.let { d ->
+                        val u = d.opt("used", ""); val t = d.opt("total", "")
+                        if (u.toString().isNotBlank()) append("Диск: $u / $t\n")
+                    }
+                }.ifBlank { "Метрики недоступны" }
+            }
+            .onFailure { statusError = it.message ?: "Недоступно" }
     }
 
     Column(
@@ -70,17 +87,17 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Аккаунт", color = GruvboxYellow)
-                Text(Session.email, color = GruvboxFg)
+                Text(Session.email.ifBlank { "—" }, color = GruvboxFg)
                 Text(Session.server, color = GruvboxGray,
                     style = MaterialTheme.typography.bodySmall)
-                Text("Роль: ${Session.role}", color = GruvboxGray,
+                Text("Роль: ${Session.role.ifBlank { "—" }}", color = GruvboxGray,
                     style = MaterialTheme.typography.bodySmall)
             }
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Модель", color = GruvboxYellow)
+                Text("Модель по умолчанию", color = GruvboxYellow)
                 if (models.isEmpty()) {
                     Text("Список недоступен", color = GruvboxGray,
                         style = MaterialTheme.typography.bodySmall)
@@ -97,9 +114,30 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
                                 if (id == Session.model) "● " else "○ ",
                                 color = if (id == Session.model) GruvboxGreen else GruvboxGray,
                             )
-                            Text(name, color = GruvboxFg)
+                            Column {
+                                Text(name, color = GruvboxFg)
+                                if (name != id) Text(id, color = GruvboxGray,
+                                    style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Безопасность", color = GruvboxYellow)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Блокировка биометрией", color = GruvboxFg)
+                        Text("Запрашивать отпечаток/лицо при входе в приложение",
+                            color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = biometric, onCheckedChange = {
+                        biometric = it
+                        prefs.edit().putBoolean("biometric_lock", it).apply()
+                    })
                 }
             }
         }
@@ -129,8 +167,14 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
             Column(Modifier.padding(16.dp)) {
                 Text("Устройство", color = GruvboxYellow)
-                Text(status.ifBlank { "Только для владельца" }, color = GruvboxFg,
-                    style = MaterialTheme.typography.bodySmall)
+                when {
+                    status.isNotBlank() -> Text(status, color = GruvboxFg,
+                        style = MaterialTheme.typography.bodySmall)
+                    statusError.isNotBlank() -> Text("Недоступно: $statusError", color = GruvboxGray,
+                        style = MaterialTheme.typography.bodySmall)
+                    else -> Text("Только для владельца", color = GruvboxGray,
+                        style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
 

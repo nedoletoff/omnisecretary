@@ -1,18 +1,27 @@
 package ru.nedoletoff.omnisecretary
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.Note
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -24,12 +33,21 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.notify.Reminders
 import ru.nedoletoff.omnisecretary.ui.ChatListScreen
 import ru.nedoletoff.omnisecretary.ui.ChatScreen
+import ru.nedoletoff.omnisecretary.ui.GruvboxBg
+import ru.nedoletoff.omnisecretary.ui.GruvboxFg
+import ru.nedoletoff.omnisecretary.ui.GruvboxGray
+import ru.nedoletoff.omnisecretary.ui.GruvboxYellow
 import ru.nedoletoff.omnisecretary.ui.LoginScreen
 import ru.nedoletoff.omnisecretary.ui.NotesScreen
 import ru.nedoletoff.omnisecretary.ui.OmniTheme
@@ -42,7 +60,7 @@ private data class LaunchAction(
     val sharedText: String = "",
 )
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val actionState = mutableStateOf(LaunchAction())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,6 +72,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             OmniTheme {
                 AppRoot(
+                    activity = this,
                     action = actionState.value,
                     onActionConsumed = { actionState.value = LaunchAction() },
                 )
@@ -86,14 +105,93 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+private fun BiometricGate(activity: FragmentActivity, onUnlocked: () -> Unit) {
+    val context = LocalContext.current
+    var error by remember { mutableStateOf("") }
+
+    fun prompt() {
+        val executor = ContextCompat.getMainExecutor(activity)
+        val biometric = BiometricPrompt(activity, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    onUnlocked()
+                }
+                override fun onAuthenticationError(code: Int, msg: CharSequence) {
+                    error = msg.toString()
+                }
+                override fun onAuthenticationFailed() {
+                    error = "Не удалось подтвердить личность"
+                }
+            })
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("OmniSecretary")
+            .setSubtitle("Подтвердите личность для входа")
+            .setAllowedAuthenticators(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                    BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+            .build()
+        try {
+            biometric.authenticate(info)
+        } catch (e: Exception) {
+            error = "Биометрия недоступна: ${e.message}"
+            onUnlocked()
+        }
+    }
+
+    LaunchedEffect(Unit) { prompt() }
+
+    Box(Modifier.fillMaxSize().background(GruvboxBg), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(24.dp)) {
+            Icon(Icons.Filled.Lock, contentDescription = null, tint = GruvboxYellow)
+            Text("Приложение заблокировано", color = GruvboxFg,
+                style = MaterialTheme.typography.titleMedium)
+            if (error.isNotBlank()) Text(error, color = GruvboxGray)
+            Button(onClick = { prompt() }) { Text("Разблокировать") }
+        }
+    }
+}
+
 private data class Tab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
 @Composable
-private fun AppRoot(action: LaunchAction, onActionConsumed: () -> Unit) {
+private fun AppRoot(
+    activity: FragmentActivity,
+    action: LaunchAction,
+    onActionConsumed: () -> Unit,
+) {
     var loggedIn by remember { mutableStateOf(Session.isLoggedIn) }
+    var unlocked by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val biometricEnabled = remember(loggedIn) {
+        context.getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
+            .getBoolean("biometric_lock", false)
+    }
+
     if (!loggedIn) {
-        LoginScreen(onLoggedIn = { loggedIn = true })
+        LoginScreen(onLoggedIn = { loggedIn = true; unlocked = false })
         return
+    }
+
+    // Биометрическая блокировка при входе в приложение (если включена).
+    if (biometricEnabled && !unlocked) {
+        val manager = BiometricManager.from(context)
+        val canAuth = manager.canAuthenticate(
+            BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+        if (canAuth == BiometricManager.BIOMETRIC_SUCCESS) {
+            BiometricGate(activity = activity, onUnlocked = { unlocked = true })
+            return
+        } else {
+            // Биометрия недоступна — не блокируем пользователя.
+            unlocked = true
+        }
+    } else if (!biometricEnabled) {
+        unlocked = true
     }
 
     val api = remember(Session.server, Session.token) { Api(Session.server, Session.token) }
@@ -191,7 +289,7 @@ private fun AppRoot(action: LaunchAction, onActionConsumed: () -> Unit) {
                 NotesScreen(api = api)
             }
             else -> Box(Modifier.padding(padding)) {
-                SettingsScreen(api = api, onLogout = { loggedIn = false })
+                SettingsScreen(api = api, onLogout = { loggedIn = false; unlocked = false })
             }
         }
     }
