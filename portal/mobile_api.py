@@ -755,3 +755,71 @@ async def delete_reminder(reminder_id: int, request: Request) -> JSONResponse:
     if not deleted:
         raise HTTPException(404, "напоминание не найдено")
     return JSONResponse({"ok": True})
+
+@router.post("/event/{event_id}/update")
+async def mobile_update_event(event_id: str, request: Request):
+    token = _token(request)
+    _user(token)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "ожидается JSON")
+    payload = {}
+    title = _clean(body.get("title"))
+    if title:
+        payload["title"] = title
+    for field in ("start", "start_at", "end", "end_at", "description", "location"):
+        if field in body and body.get(field) is not None:
+            payload[field] = body.get(field)
+    if not payload:
+        raise HTTPException(400, "нет полей для обновления")
+    # Open WebUI: разные сборки принимают update по разным путям.
+    for path in (
+        f"/api/v1/calendars/events/{event_id}/update",
+        "/api/v1/calendars/events/update",
+    ):
+        data = dict(payload)
+        if path.endswith("/update") and "events/" not in path.replace(f"/{event_id}/", "/"):
+            data["id"] = event_id
+        try:
+            res = _owui_json("POST", path, token, data)
+            return JSONResponse(res if isinstance(res, dict) else {"ok": True, "event": res})
+        except HTTPException as exc:
+            if exc.status_code in (404, 405):
+                continue
+            raise
+    raise HTTPException(400, "обновление события не поддерживается этой версией Open WebUI")
+
+
+@router.post("/task/{task_id}/update")
+async def mobile_update_task(task_id: str, request: Request):
+    token = _token(request)
+    _user(token)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "ожидается JSON")
+    payload = {}
+    title = _clean(body.get("title"))
+    if title:
+        payload["title"] = title
+    if "description" in body:
+        payload["description"] = _clean(body.get("description"))[:2000]
+    if "due" in body or "due_date" in body:
+        due = _clean(body.get("due") or body.get("due_date"))
+        if due:
+            payload["due_date"] = due
+    if "done" in body:
+        payload["done"] = bool(body.get("done"))
+    if not payload:
+        raise HTTPException(400, "нет полей для обновления")
+    # Vikunja: обычно POST /api/v1/tasks/{id}
+    for method, path in (("POST", f"/api/v1/tasks/{task_id}"), ("PUT", f"/api/v1/tasks/{task_id}")):
+        try:
+            res = _vikunja_json(method, path, payload)
+            return JSONResponse(res if isinstance(res, dict) else {"ok": True, "task": res})
+        except HTTPException as exc:
+            if exc.status_code in (404, 405):
+                continue
+            raise
+    raise HTTPException(400, "обновление задачи не поддерживается")

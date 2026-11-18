@@ -14,6 +14,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +47,12 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
     }
     var biometric by remember {
         mutableStateOf(prefs.getBoolean("biometric_lock", false))
+    }
+    var ntfyServer by remember {
+        mutableStateOf(prefs.getString("ntfy_server", "https://ntfy.sh") ?: "https://ntfy.sh")
+    }
+    var ntfyTopic by remember {
+        mutableStateOf(prefs.getString("ntfy_topic", "") ?: "")
     }
 
     LaunchedEffect(Unit) {
@@ -146,7 +153,7 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Уведомления", color = GruvboxYellow)
-                Text("Каналы независимы: приложение и Telegram настраиваются отдельно.",
+                Text("Каналы независимы: приложение, Telegram и ntfy настраиваются отдельно.",
                     color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("В приложении", Modifier.weight(1f), color = GruvboxFg)
@@ -162,6 +169,14 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
                         prefs.edit().putBoolean("notify_telegram", it).apply()
                     })
                 }
+                OutlinedTextField(ntfyServer, { ntfyServer = it; prefs.edit().putString("ntfy_server", it).apply() },
+                    label = { Text("ntfy сервер") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(ntfyTopic, { ntfyTopic = it; prefs.edit().putString("ntfy_topic", it).apply() },
+                    label = { Text("ntfy topic (пусто — не использовать)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                Text("Для собственного ntfy укажите адрес сервера и topic. Push-подписка — через приложение ntfy/браузер на устройстве.",
+                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
             }
         }
 

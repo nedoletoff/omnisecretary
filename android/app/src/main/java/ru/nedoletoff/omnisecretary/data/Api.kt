@@ -325,6 +325,17 @@ class Api(private val server: String, private val token: String = "") {
         Unit
     }
 
+    suspend fun updateEvent(id: String, title: String? = null, start: String? = null,
+                            durationMin: Int? = null, description: String? = null): JSONObject =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject()
+            if (title != null) body.put("title", title)
+            if (start != null) body.put("start", start)
+            if (durationMin != null) body.put("duration_min", durationMin)
+            if (description != null) body.put("description", description)
+            call("/api/m/event/$id/update", "POST", body)
+        }
+
     suspend fun events(days: Int = 7): List<TodayEvent> = withContext(Dispatchers.IO) {
         val array = call("/api/m/events?days=$days").optJSONArray("events") ?: JSONArray()
         (0 until array.length()).mapNotNull { i ->
@@ -356,6 +367,16 @@ class Api(private val server: String, private val token: String = "") {
         call("/api/m/task/$id/delete", "POST")
         Unit
     }
+
+    suspend fun updateTask(id: Long, title: String? = null, due: String? = null,
+                           description: String? = null): JSONObject =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject()
+            if (title != null) body.put("title", title)
+            if (due != null) body.put("due", due)
+            if (description != null) body.put("description", description)
+            call("/api/m/task/$id/update", "POST", body)
+        }
 
     // ── Заметки Open WebUI ──
 

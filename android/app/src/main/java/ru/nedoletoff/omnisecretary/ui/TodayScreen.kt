@@ -187,7 +187,8 @@ fun TodayScreen(api: Api, reloadKey: Int) {
                     today.tasks.forEach { task ->
                         TaskRow(task,
                             onDone = { runAction { api.completeTask(task.id, true); "Задача выполнена" } },
-                            onDelete = { runAction { api.deleteTask(task.id); "Задача удалена" } })
+                            onDelete = { runAction { api.deleteTask(task.id); "Задача удалена" } },
+                            onEdit = { editingTask = task })
                     }
                 }
             }
@@ -266,6 +267,18 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             })
         DialogKind.NONE -> Unit
     }
+
+    editingTask?.let { task ->
+        TaskEditDialog(task = task,
+            onDismiss = { editingTask = null },
+            onSave = { title, due ->
+                runAction {
+                    api.updateTask(task.id, title = title, due = due)
+                    editingTask = null
+                    "Задача обновлена"
+                }
+            })
+    }
 }
 
 @Composable
@@ -296,12 +309,13 @@ private fun EventRow(event: ru.nedoletoff.omnisecretary.data.TodayEvent, onDelet
 
 @Composable
 private fun TaskRow(task: ru.nedoletoff.omnisecretary.data.TodayTask,
-                    onDone: () -> Unit, onDelete: () -> Unit) {
+                    onDone: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             val due = if (task.due.isBlank()) "" else " · ${task.due}"
             Text("${task.title}$due", color = GruvboxFg)
         }
+        TextButton(onClick = onEdit) { Text("✎", color = GruvboxBlue) }
         TextButton(onClick = onDone) { Text("✓", color = GruvboxGreen) }
         TextButton(onClick = onDelete) { Text("×", color = GruvboxRed) }
     }
@@ -432,6 +446,33 @@ private fun TaskDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) 
         confirmButton = {
             TextButton(onClick = { if (title.isNotBlank()) onSave(title, due.trim()) },
                 enabled = title.isNotBlank()) { Text("Добавить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+@Composable
+private fun TaskEditDialog(
+    task: ru.nedoletoff.omnisecretary.data.TodayTask,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+) {
+    var title by remember { mutableStateOf(task.title) }
+    var due by remember { mutableStateOf(task.due) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Редактировать задачу") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(title, { title = it }, label = { Text("Название") },
+                    singleLine = true)
+                OutlinedTextField(due, { due = it },
+                    label = { Text("Срок (ГГГГ-ММ-ДД)") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (title.isNotBlank()) onSave(title.trim(), due.trim()) },
+                enabled = title.isNotBlank()) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
