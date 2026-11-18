@@ -27,12 +27,16 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -175,12 +179,27 @@ private fun AppRoot(
             .getBoolean("biometric_lock", false)
     }
 
+    var needsRelock by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, biometricEnabled, loggedIn) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (!biometricEnabled || !loggedIn) return@LifecycleEventObserver
+            when (event) {
+                Lifecycle.Event.ON_STOP -> needsRelock = true
+                Lifecycle.Event.ON_START -> if (needsRelock) { unlocked = false; needsRelock = false }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     if (!loggedIn) {
-        LoginScreen(onLoggedIn = { loggedIn = true; unlocked = false })
+        LoginScreen(onLoggedIn = { loggedIn = true; unlocked = false; needsRelock = false })
         return
     }
 
-    // Биометрическая блокировка при входе в приложение (если включена).
+    // Биометрическая блокировка при входе и при возврате в приложение.
     if (biometricEnabled && !unlocked) {
         val manager = BiometricManager.from(context)
         val canAuth = manager.canAuthenticate(
@@ -191,7 +210,6 @@ private fun AppRoot(
             BiometricGate(activity = activity, onUnlocked = { unlocked = true })
             return
         } else {
-            // Биометрия недоступна — не блокируем пользователя.
             unlocked = true
         }
     } else if (!biometricEnabled) {
