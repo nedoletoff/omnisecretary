@@ -66,9 +66,16 @@ Android 8.0+.
 
 ### 3.2. Сборка
 
-- Исходники: `android/` (Kotlin, Compose, AGP 9, Gradle 9).
-- Сборка **в GitHub Actions** (JDK 21 + Android SDK), не на Pi: Gradle
-  съест всю память.
+- Исходники: `android/` (Kotlin, Compose, AGP 8.13.2, Gradle 8.13, JDK 21).
+- Сборка **только в GitHub Actions** (JDK 21 + Android SDK): `aapt2` из
+  Android SDK поставляется только под x86-64 и на Raspberry Pi (arm64)
+  падает с `Exec format error`. Локальная сборка на Pi невозможна.
+- Workflow лежит в `android/ci/github-actions-android.yml`, потому что токен
+  без scope `workflow` не может пушить файлы в `.github/`. Установка —
+  `./scripts/install-android-ci.sh` или создание файла через веб-интерфейс.
+- Версии AndroidX подобраны под `compileSdk 36` (AGP 8.13): navigation 2.9.5,
+  lifecycle 2.9.4, core-ktx 1.17.0, okhttp 4.12.0. Более новые требуют
+  compileSdk 37 и AGP 9.1+.
 - Артефакты: `app-debug.apk` в артефактах сборки и в **GitHub Releases**
   по тегу `android-v*`; установка вручную или обновлением из релиза.
 - Подпись: keystore в GitHub Secrets, не в репозитории (для debug —

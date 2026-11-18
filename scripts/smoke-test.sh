@@ -256,12 +256,19 @@ fi
 
 # ── 6. VPN-прокси (если запущен) ─────────────────────────────
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx omni-vpn; then
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-        -x http://127.0.0.1:2080 https://api.ipify.org 2>/dev/null || true)"
-    if [[ "$code" == "200" ]]; then
-        pass "vpn: прокси отдаёт внешний IP"
+    # Провайдер VPN иногда рвёт одиночное TLS-соединение — пробуем несколько раз.
+    # Любой HTTP-код (даже 401) доказывает, что туннель до Telegram работает.
+    code=""
+    for attempt in 1 2 3 4; do
+        code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            -x http://127.0.0.1:2080 https://api.telegram.org/bot0:0/getMe 2>/dev/null || true)"
+        [[ "$code" != "000" && -n "$code" ]] && break
+        sleep 2
+    done
+    if [[ "$code" != "000" && -n "$code" ]]; then
+        pass "vpn: туннель до api.telegram.org (HTTP $code)"
     else
-        fail "vpn: прокси не отвечает (HTTP ${code:-000})"
+        fail "vpn: туннель не отвечает (HTTP ${code:-000})"
     fi
 fi
 

@@ -290,7 +290,10 @@ def main() -> int:
     if not measured:
         print("[fail] ни один сервер не отвечает по TCP", file=sys.stderr)
         return 1
-    measured.sort(key=lambda pair: pair[0])
+    # ws/tls стабильнее xhttp+reality у этого провайдера: xhttp-серверы
+    # отвечают на ping, но рвут TLS на реальных запросах. Поэтому в пул
+    # сначала идут ws, а xhttp — только если других не осталось.
+    measured.sort(key=lambda pair: (pair[1]["net"] == "xhttp", pair[0]))
     # Берём до 6 самых быстрых: urltest переключится, если сервер отвалится.
     selected = measured[:6]
     outbounds = []
