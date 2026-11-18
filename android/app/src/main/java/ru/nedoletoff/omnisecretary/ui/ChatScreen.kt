@@ -31,6 +31,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -58,8 +59,8 @@ import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.voice.Recorder
 import java.io.File
 
-private fun playWav(context: Context, bytes: ByteArray) {
-    if (bytes.isEmpty()) return
+private fun playWav(context: Context, bytes: ByteArray, onDone: () -> Unit = {}) {
+    if (bytes.isEmpty()) { onDone(); return }
     val file = File.createTempFile("tts-", ".wav", context.cacheDir)
     file.writeBytes(bytes)
     val player = MediaPlayer()
@@ -67,9 +68,16 @@ private fun playWav(context: Context, bytes: ByteArray) {
     player.setOnCompletionListener {
         it.release()
         file.delete()
+        onDone()
     }
-    player.prepare()
-    player.start()
+    player.setOnErrorListener { _, _, _ ->
+        runCatching { it.release() }
+        file.delete()
+        onDone()
+        true
+    }
+    runCatching { player.prepare(); player.start() }
+        .onFailure { runCatching { player.release() }; file.delete(); onDone() }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,20 +100,39 @@ fun ChatScreen(
     var input by remember { mutableStateOf(draft) }
     var busy by remember { mutableStateOf(false) }
     var recording by remember { mutableStateOf(false) }
+    var handsFree by remember { mutableStateOf(autoRecord) }
     var notice by remember { mutableStateOf("") }
 
     var permissionGranted by remember { mutableStateOf(false) }
     fun startRecording() {
+        if (busy || recording) return
         runCatching { recorder.start() }
             .onSuccess { recording = true; notice = "Говорите…" }
             .onFailure { notice = "Микрофон недоступен" }
+    }
+
+    fun speakAndMaybeListen(text: String) {
+        if (text.isBlank()) return
+        scope.launch {
+            try {
+                val bytes = api.speak(text)
+                withContext(Dispatchers.Main) {
+                    playWav(context, bytes) {
+                        if (handsFree && !busy && !recording) startRecording()
+                    }
+                }
+            } catch (failure: Exception) {
+                notice = failure.message ?: "Озвучка недоступна"
+                if (handsFree) startRecording()
+            }
+        }
     }
 
     val permission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()) { granted ->
         permissionGranted = granted
         if (!granted) notice = "Без доступа к микрофону голос не работает"
-        else if (autoRecord) startRecording()
+        else if (autoRecord || handsFree) startRecording()
     }
 
     LaunchedEffect(chatId) {
@@ -139,13 +166,15 @@ fun ChatScreen(
         scope.launch {
             try {
                 if (activeChatId.isBlank()) activeChatId = api.newChat()
+                var answer = ""
                 api.stream(activeChatId, Session.model, history, text) { delta ->
+                    answer += delta
                     val current = messages.toMutableList()
                     val last = current.lastOrNull() ?: return@stream
-                    current[current.lastIndex] =
-                        last.copy(content = last.content + delta)
+                    current[current.lastIndex] = last.copy(content = last.content + delta)
                     messages = current
                 }
+                if (handsFree && answer.isNotBlank()) speakAndMaybeListen(answer)
             } catch (failure: Exception) {
                 notice = failure.message ?: "Ошибка ответа"
                 messages = messages.dropLast(1)
@@ -168,7 +197,7 @@ fun ChatScreen(
                 try {
                     val text = api.transcribe(bytes)
                     if (text.isBlank()) notice = "Речь не распознана"
-                    else input = text
+                    else if (handsFree) send(text) else input = text
                 } catch (failure: Exception) {
                     notice = failure.message ?: "Ошибка распознавания"
                 } finally {
@@ -187,14 +216,7 @@ fun ChatScreen(
     fun speakLast() {
         val text = messages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
             ?.content ?: return
-        scope.launch {
-            try {
-                val bytes = api.speak(text)
-                withContext(Dispatchers.Main) { playWav(context, bytes) }
-            } catch (failure: Exception) {
-                notice = failure.message ?: "Озвучка недоступна"
-            }
-        }
+        speakAndMaybeListen(text)
     }
 
     fun saveLastToNote() {
@@ -213,13 +235,25 @@ fun ChatScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title.ifBlank { "Чат" }, maxLines = 1) },
+                title = {
+                    Column {
+                        Text(title.ifBlank { "Чат" }, maxLines = 1)
+                        Text(Session.model, style = MaterialTheme.typography.labelSmall,
+                            color = GruvboxGray, maxLines = 1)
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
                 },
                 actions = {
+                    IconToggleButton(checked = handsFree,
+                        onCheckedChange = { handsFree = it }) {
+                        Icon(Icons.Filled.Mic,
+                            contentDescription = "Диалог без рук",
+                            tint = if (handsFree) GruvboxGreen else GruvboxGray)
+                    }
                     IconButton(onClick = { speakLast() }) {
                         Icon(Icons.Filled.VolumeUp, contentDescription = "Озвучить")
                     }

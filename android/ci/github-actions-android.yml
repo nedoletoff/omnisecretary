@@ -6,6 +6,7 @@ on:
     paths:
       - "android/**"
       - ".github/workflows/android.yml"
+      - ".github/workflows/android.yaml"
     tags: ["android-v*"]
   pull_request:
     paths:
@@ -14,8 +15,10 @@ on:
 
 jobs:
   build:
-    # Сборка не на Pi: Gradle съедает всю память Raspberry.
+    # Сборка на x86-64 раннере: aapt2 и Gradle не подходят для Pi (arm64/RAM).
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -26,7 +29,7 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.13"
+          gradle-version: "9.1.0"
 
       - name: Сборка debug APK
         working-directory: android

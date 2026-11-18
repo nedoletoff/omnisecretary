@@ -184,6 +184,30 @@ def _vault_auth() -> tuple[str, str]:
     return values.get("USERNAME", "owner"), values.get("PASSWORD", "")
 
 
+def _owui_call(token: str, method: str, path: str,
+               body: dict | None = None,
+               params: dict | None = None) -> object:
+    with httpx.Client(timeout=20) as client:
+        response = client.request(method, f"{OWUI_URL}{path}", params=params,
+                                  json=body,
+                                  headers={"Authorization": f"Bearer {token}"})
+    if response.status_code not in (200, 201):
+        raise HTTPException(response.status_code, f"Open WebUI: {path}")
+    if not response.content:
+        return {}
+    return response.json()
+
+
+def _ensure_calendar(token: str) -> str:
+    """Возвращает id первого календаря пользователя, создаёт при отсутствии."""
+    calendars = _owui_call(token, "GET", "/api/v1/calendars/")
+    if calendars:
+        return str(calendars[0]["id"])
+    created = _owui_call(token, "POST", "/api/v1/calendars/create",
+                         body={"name": "Личный", "color": "#d79921"})
+    return str(created["id"])
+
+
 # ── Эндпоинты ────────────────────────────────────────────────────────────
 
 @router.get("/today")
@@ -308,6 +332,88 @@ async def reminder(request: Request) -> JSONResponse:
         "due_at": moment.isoformat(timespec="seconds"),
         "telegram": bool(telegram and TELEGRAM_OWNER_ID),
     })
+
+
+@router.post("/event")
+async def create_event(request: Request) -> JSONResponse:
+    """Создать событие в календаре Open WebUI.
+
+    start — ISO 8601 (YYYY-MM-DDTHH:MM или с зоной). duration_min — длина,
+    по умолчанию 60. Время хранится в наносекундах (особенность Open WebUI).
+    """
+    token = _token(request)
+    _user(token)
+    data = await request.json()
+    title = str(data.get("title") or "").strip()
+    start_raw = str(data.get("start") or "").strip()
+    if not title or not start_raw:
+        raise HTTPException(400, "нужны title и start")
+    try:
+        start = datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(400, "start в формате ISO 8601")
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone(timedelta(hours=3)))  # Europe/Moscow
+    duration = int(data.get("duration_min") or 60)
+    end = start + timedelta(minutes=max(5, duration))
+    calendar_id = _ensure_calendar(token)
+    payload = {
+        "calendar_id": calendar_id,
+        "title": title,
+        "description": str(data.get("description") or "").strip() or None,
+        "start_at": int(start.timestamp() * 1_000_000_000),
+        "end_at": int(end.timestamp() * 1_000_000_000),
+        "is_all_day": False,
+        "location": str(data.get("location") or "").strip() or None,
+    }
+    event = _owui_call(token, "POST", "/api/v1/calendars/events/create", body=payload)
+    return JSONResponse({"ok": True, "id": event.get("id"), "title": title})
+
+
+@router.post("/event/{event_id}/delete")
+async def delete_event(event_id: str, request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    _owui_call(token, "DELETE", f"/api/v1/calendars/events/{event_id}/delete")
+    return JSONResponse({"ok": True})
+
+
+@router.post("/task")
+async def create_task(request: Request) -> JSONResponse:
+    """Создать задачу в Vikunja (общий список, токен на сервере)."""
+    token = _token(request)
+    _user(token)
+    if not VIKUNJA_TOKEN:
+        raise HTTPException(503, "Vikunja не настроен")
+    data = await request.json()
+    title = str(data.get("title") or "").strip()
+    if not title:
+        raise HTTPException(400, "нужен title")
+    payload: dict[str, object] = {"title": title}
+    due = str(data.get("due") or "").strip()
+    if due:
+        try:
+            day = datetime.fromisoformat(due.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(400, "due в формате YYYY-MM-DD")
+        payload["due_date"] = day.strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        with httpx.Client(timeout=20) as client:
+            response = client.put(
+                f"{VIKUNJA_URL}/api/v1/projects/1/tasks",
+                json=payload,
+                headers={"Authorization": f"Bearer {VIKUNJA_TOKEN}"})
+    except httpx.HTTPError:
+        raise HTTPException(503, "Vikunja недоступен")
+    if response.status_code not in (200, 201):
+        detail = ""
+        try:
+            detail = str(response.json().get("message", ""))
+        except Exception:  # noqa: BLE001
+            detail = response.text[:120]
+        raise HTTPException(response.status_code, detail or "не удалось создать задачу")
+    task = response.json()
+    return JSONResponse({"ok": True, "id": task.get("id"), "title": title})
 
 
 @router.get("/status")

@@ -4,8 +4,8 @@
 !.env.example
 
 # Данные и бэкапы (живут на диске данных, не в репозитории)
-data/
-backups/
+/data/
+/backups/
 *.dump
 *.snapshot
 
