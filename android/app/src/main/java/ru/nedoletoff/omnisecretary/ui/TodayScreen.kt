@@ -153,11 +153,44 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             }
         }
 
-        Section("События", today.events.map {
-            if (it.first.isBlank()) it.second else "${it.first}  ${it.second}"
-        })
-        Section("Задачи", today.tasks)
-        Section("Заметки", today.notes)
+        // События с удалением
+        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+            modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("События", color = GruvboxYellow, style = MaterialTheme.typography.titleMedium)
+                if (today.events.isEmpty()) {
+                    Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    today.events.forEach { event ->
+                        EventRow(event) {
+                            runAction {
+                                api.deleteEvent(event.id)
+                                "Событие удалено"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Задачи с выполнением и удалением
+        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+            modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Задачи", color = GruvboxYellow, style = MaterialTheme.typography.titleMedium)
+                if (today.tasks.isEmpty()) {
+                    Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    today.tasks.forEach { task ->
+                        TaskRow(task,
+                            onDone = { runAction { api.completeTask(task.id, true); "Задача выполнена" } },
+                            onDelete = { runAction { api.deleteTask(task.id); "Задача удалена" } })
+                    }
+                }
+            }
+        }
+
+        Section("Заметки", today.notes.map { it.title })
     }
 
     when (dialog) {
@@ -218,6 +251,30 @@ private fun Section(title: String, lines: List<String>) {
                 lines.forEach { Text(it, color = GruvboxFg) }
             }
         }
+    }
+}
+
+@Composable
+private fun EventRow(event: ru.nedoletoff.omnisecretary.data.TodayEvent, onDelete: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(if (event.time.isBlank()) event.title else "${event.time}  ${event.title}",
+                color = GruvboxFg)
+        }
+        TextButton(onClick = onDelete) { Text("×", color = GruvboxRed) }
+    }
+}
+
+@Composable
+private fun TaskRow(task: ru.nedoletoff.omnisecretary.data.TodayTask,
+                    onDone: () -> Unit, onDelete: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            val due = if (task.due.isBlank()) "" else " · ${task.due}"
+            Text("${task.title}$due", color = GruvboxFg)
+        }
+        TextButton(onClick = onDone) { Text("✓", color = GruvboxGreen) }
+        TextButton(onClick = onDelete) { Text("×", color = GruvboxRed) }
     }
 }
 

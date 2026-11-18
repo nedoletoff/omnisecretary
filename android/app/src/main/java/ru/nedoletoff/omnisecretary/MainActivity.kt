@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Note
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Icon
@@ -30,6 +31,7 @@ import ru.nedoletoff.omnisecretary.notify.Reminders
 import ru.nedoletoff.omnisecretary.ui.ChatListScreen
 import ru.nedoletoff.omnisecretary.ui.ChatScreen
 import ru.nedoletoff.omnisecretary.ui.LoginScreen
+import ru.nedoletoff.omnisecretary.ui.NotesScreen
 import ru.nedoletoff.omnisecretary.ui.OmniTheme
 import ru.nedoletoff.omnisecretary.ui.SettingsScreen
 import ru.nedoletoff.omnisecretary.ui.TodayScreen
@@ -126,6 +128,7 @@ private fun AppRoot(action: LaunchAction, onActionConsumed: () -> Unit) {
     val tabs = listOf(
         Tab("Чаты", Icons.AutoMirrored.Filled.Chat),
         Tab("Сегодня", Icons.Filled.Today),
+        Tab("Заметки", Icons.AutoMirrored.Filled.Note),
         Tab("Настройки", Icons.Filled.Settings),
     )
 
@@ -183,6 +186,9 @@ private fun AppRoot(action: LaunchAction, onActionConsumed: () -> Unit) {
             }
             1 -> Box(Modifier.padding(padding)) {
                 TodayScreen(api = api, reloadKey = reloadToday)
+            }
+            2 -> Box(Modifier.padding(padding)) {
+                NotesScreen(api = api)
             }
             else -> Box(Modifier.padding(padding)) {
                 SettingsScreen(api = api, onLogout = { loggedIn = false })

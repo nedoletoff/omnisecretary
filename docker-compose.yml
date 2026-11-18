@@ -460,6 +460,8 @@ services:
       VIKUNJA_BASE_URL: http://vikunja:3456
       VIKUNJA_API_TOKEN: ${VIKUNJA_API_TOKEN:-}
       TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
+      VAULT_DIR: /vault
+      VAULT_INDEX_PATH: /vault-index/vault.db
       TZ: ${TZ:-UTC}
     volumes:
       - ./portal:/app/portal:ro
@@ -467,6 +469,8 @@ services:
       - ${DATA_ROOT}/secrets:/secrets:ro
       - ${DATA_ROOT}/bot:/bot
       - ${DATA_ROOT}/status:/status:ro
+      - ${DATA_ROOT}/vault:/vault:ro
+      - ${DATA_ROOT}/vault-index:/vault-index:ro
     # backend нужен для STT/TTS и Vikunja; наружу портал не публикуется.
     networks: [frontend, backend]
     healthcheck:

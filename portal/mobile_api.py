@@ -426,3 +426,266 @@ def status(request: Request) -> JSONResponse:
         return JSONResponse(json.loads(STATUS_FILE.read_text(encoding="utf-8")))
     except (OSError, ValueError):
         raise HTTPException(503, "метрики ещё не собраны")
+
+
+# ── Задачи (Vikunja) ────────────────────────────────────────────────────
+
+def _vikunja(method: str, path: str, body: dict | None = None,
+             params: dict | None = None) -> object:
+    if not VIKUNJA_TOKEN:
+        raise HTTPException(503, "Vikunja не настроен")
+    try:
+        with httpx.Client(timeout=20) as client:
+            response = client.request(
+                method, f"{VIKUNJA_URL}{path}", json=body, params=params,
+                headers={"Authorization": f"Bearer {VIKUNJA_TOKEN}"})
+    except httpx.HTTPError:
+        raise HTTPException(503, "Vikunja недоступен")
+    if response.status_code == 204:
+        return {}
+    if response.status_code not in (200, 201):
+        detail = ""
+        try:
+            detail = str(response.json().get("message", ""))
+        except Exception:  # noqa: BLE001
+            detail = response.text[:120]
+        raise HTTPException(response.status_code, detail or "ошибка Vikunja")
+    return response.json() if response.content else {}
+
+
+@router.get("/tasks")
+def list_tasks(request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    tasks = _vikunja("GET", "/api/v1/tasks",
+                     params={"filter": "done = false", "per_page": 50})
+    items = []
+    for task in (tasks if isinstance(tasks, list) else []):
+        items.append({
+            "id": task.get("id"),
+            "title": task.get("title", ""),
+            "description": task.get("description", ""),
+            "due": (task.get("due_date") or "")[:10],
+            "priority": task.get("priority", 0),
+            "done": bool(task.get("done")),
+        })
+    return JSONResponse({"tasks": items})
+
+
+@router.post("/task/{task_id}/done")
+async def complete_task(task_id: int, request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    data = await request.json()
+    done = bool(data.get("done", True))
+    _vikunja("POST", f"/api/v1/tasks/{task_id}", body={"done": done})
+    return JSONResponse({"ok": True})
+
+
+@router.post("/task/{task_id}/delete")
+async def delete_task(task_id: int, request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    _vikunja("DELETE", f"/api/v1/tasks/{task_id}")
+    return JSONResponse({"ok": True})
+
+
+# ── Календарь (расширенный) ─────────────────────────────────────────────
+
+@router.get("/events")
+def list_events(request: Request, days: int = 7) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    days = max(1, min(days, 30))
+    now = datetime.now()
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=days)
+    try:
+        items = _owui(token, "/api/v1/calendars/events", {
+            "start": start.strftime("%Y-%m-%dT%H:%M:%S"),
+            "end": end.strftime("%Y-%m-%dT%H:%M:%S"),
+        })
+    except HTTPException:
+        items = []
+    events = items if isinstance(items, list) else items.get("events", [])
+    result = []
+    for event in events:
+        start_at = event.get("start_at") or event.get("startAt") or 0
+        moment = datetime.fromtimestamp(int(start_at) / 1e9) if start_at else None
+        result.append({
+            "id": event.get("id", ""),
+            "title": event.get("title", ""),
+            "description": event.get("description") or "",
+            "time": moment.strftime("%Y-%m-%d %H:%M") if moment else "",
+            "all_day": bool(event.get("all_day") or event.get("allDay")),
+        })
+    result.sort(key=lambda item: item["time"])
+    return JSONResponse({"events": result})
+
+
+# ── Заметки Open WebUI ──────────────────────────────────────────────────
+
+@router.get("/notes")
+def list_notes(request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    notes = _owui(token, "/api/v1/notes/")
+    items = notes if isinstance(notes, list) else notes.get("data", [])
+    result = []
+    for note in items:
+        result.append({
+            "id": note.get("id", ""),
+            "title": note.get("title", ""),
+            "updated_at": note.get("updated_at", note.get("updatedAt", 0)),
+        })
+    result.sort(key=lambda n: n.get("updated_at") or 0, reverse=True)
+    return JSONResponse({"notes": result})
+
+
+@router.get("/notes/{note_id}")
+def get_note(note_id: str, request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    note = _owui(token, f"/api/v1/notes/{note_id}")
+    content = note.get("data", {}).get("content", {})
+    if isinstance(content, dict):
+        text = content.get("md", content.get("text", json.dumps(content, ensure_ascii=False)))
+    else:
+        text = str(content)
+    return JSONResponse({
+        "id": note.get("id", note_id),
+        "title": note.get("title", ""),
+        "content": text,
+        "updated_at": note.get("updated_at", note.get("updatedAt", 0)),
+    })
+
+
+@router.post("/notes")
+async def create_owui_note(request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    data = await request.json()
+    title = str(data.get("title") or "Без названия").strip()
+    content = str(data.get("content") or "").strip()
+    body = {"title": title, "data": {"content": {"md": content, "html": "", "json": None}}}
+    note = _owui_call(token, "POST", "/api/v1/notes/create", body=body)
+    return JSONResponse({"ok": True, "id": note.get("id"), "title": note.get("title", title)})
+
+
+@router.post("/notes/{note_id}")
+async def update_owui_note(note_id: str, request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    data = await request.json()
+    body: dict[str, object] = {}
+    if "title" in data:
+        body["title"] = str(data["title"]).strip()
+    if "content" in data:
+        body["data"] = {"content": {"md": str(data["content"]), "html": "", "json": None}}
+    note = _owui_call(token, "POST", f"/api/v1/notes/{note_id}/update", body=body)
+    return JSONResponse({"ok": True, "id": note.get("id", note_id)})
+
+
+@router.post("/notes/{note_id}/delete")
+async def delete_owui_note(note_id: str, request: Request) -> JSONResponse:
+    token = _token(request)
+    _user(token)
+    _owui_call(token, "DELETE", f"/api/v1/notes/{note_id}/delete")
+    return JSONResponse({"ok": True})
+
+
+# ── Вольт Obsidian (чтение/поиск, только для владельца) ─────────────────
+
+VAULT_DIR = Path(os.environ.get("VAULT_DIR", "/vault")).resolve()
+VAULT_INDEX = Path(os.environ.get("VAULT_INDEX_PATH", "/vault-index/vault.db"))
+
+
+def _require_owner(user: dict) -> None:
+    if not _is_owner(user):
+        raise HTTPException(403, "вольт доступен только владельцу")
+
+
+def _safe_vault_path(rel: str) -> Path:
+    p = (VAULT_DIR / rel).resolve()
+    if VAULT_DIR not in p.parents and p != VAULT_DIR:
+        raise HTTPException(400, "недопустимый путь")
+    return p
+
+
+@router.get("/vault/files")
+def vault_files(request: Request, q: str = "", limit: int = 50) -> JSONResponse:
+    token = _token(request)
+    _require_owner(_user(token))
+    if not VAULT_DIR.is_dir():
+        return JSONResponse({"files": [], "note": "вольт не смонтирован"})
+    limit = max(1, min(limit, 100))
+    files = []
+    for path in sorted(VAULT_DIR.rglob("*.md")):
+        if ".git" in path.parts:
+            continue
+        rel = str(path.relative_to(VAULT_DIR))
+        if q and q.lower() not in rel.lower():
+            continue
+        files.append({"path": rel, "size": path.stat().st_size})
+        if len(files) >= limit:
+            break
+    return JSONResponse({"files": files})
+
+
+@router.get("/vault/read")
+def vault_read(request: Request, path: str) -> JSONResponse:
+    token = _token(request)
+    _require_owner(_user(token))
+    target = _safe_vault_path(path)
+    if not target.is_file():
+        raise HTTPException(404, "файл не найден")
+    if target.suffix.lower() != ".md":
+        raise HTTPException(400, "можно читать только .md")
+    text = target.read_text(encoding="utf-8", errors="replace")
+    if len(text) > 20000:
+        text = text[:20000] + "\n…(обрезано)"
+    return JSONResponse({"path": path, "content": text})
+
+
+@router.get("/vault/search")
+def vault_search(request: Request, q: str, limit: int = 20) -> JSONResponse:
+    token = _token(request)
+    _require_owner(_user(token))
+    query = (q or "").strip()
+    if not query:
+        raise HTTPException(400, "нужен q")
+    limit = max(1, min(limit, 50))
+    results = []
+    # Пытаемся FTS5-индекс, иначе простой поиск по файлам.
+    if VAULT_INDEX.is_file():
+        try:
+            conn = sqlite3.connect(f"file:{VAULT_INDEX}?mode=ro", uri=True, timeout=5)
+            rows = conn.execute(
+                "SELECT path, snippet(notes, 1, '', '', ' … ', 20) FROM notes "
+                "WHERE notes MATCH ? LIMIT ?", (query, limit)).fetchall()
+            conn.close()
+            for path, snippet in rows:
+                results.append({"path": path, "snippet": snippet or ""})
+            return JSONResponse({"results": results, "engine": "fts"})
+        except sqlite3.Error:
+            pass
+    # Fallback: grep-поиск.
+    needle = query.lower()
+    for path in VAULT_DIR.rglob("*.md") if VAULT_DIR.is_dir() else []:
+        if ".git" in path.parts:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        low = text.lower()
+        idx = low.find(needle)
+        if idx == -1:
+            continue
+        start = max(0, idx - 40)
+        end = min(len(text), idx + len(query) + 80)
+        snippet = text[start:end].replace("\n", " ")
+        results.append({"path": str(path.relative_to(VAULT_DIR)), "snippet": snippet})
+        if len(results) >= limit:
+            break
+    return JSONResponse({"results": results, "engine": "scan"})

@@ -13,14 +13,23 @@ import java.util.concurrent.TimeUnit
 
 data class ChatSummary(val id: String, val title: String, val updated: Long)
 data class ChatMessage(val role: String, val content: String, val timestamp: Long)
+data class TodayEvent(val id: String, val time: String, val title: String)
+data class TodayTask(val id: Long, val title: String, val due: String)
+data class TodayNote(val id: String, val title: String)
+
 data class TodayData(
     val place: String,
     val temperature: Int?,
     val wind: Int?,
-    val events: List<Pair<String, String>>,
-    val tasks: List<String>,
-    val notes: List<String>,
+    val symbol: String,
+    val events: List<TodayEvent>,
+    val tasks: List<TodayTask>,
+    val notes: List<TodayNote>,
 )
+
+data class OwuiNote(val id: String, val title: String, val content: String, val updatedAt: Long)
+data class VaultFile(val path: String, val size: Long)
+data class VaultResult(val path: String, val snippet: String)
 
 /** HTTP-клиент к Pi. Все запросы — только по HTTPS (см. network_security_config). */
 class Api(private val server: String, private val token: String = "") {
@@ -168,33 +177,43 @@ class Api(private val server: String, private val token: String = "") {
     suspend fun today(): TodayData = withContext(Dispatchers.IO) {
         val body = call("/api/m/today")
         val weather = body.optJSONObject("weather") ?: JSONObject()
-        val events = mutableListOf<Pair<String, String>>()
+        val events = mutableListOf<TodayEvent>()
         body.optJSONArray("events")?.let { array ->
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                events.add(item.optString("time") to item.optString("title"))
+                events.add(TodayEvent(
+                    id = item.optString("id"),
+                    time = item.optString("time"),
+                    title = item.optString("title"),
+                ))
             }
         }
-        val tasks = mutableListOf<String>()
+        val tasks = mutableListOf<TodayTask>()
         body.optJSONArray("tasks")?.let { array ->
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                val due = item.optString("due")
-                tasks.add(if (due.isBlank()) item.optString("title")
-                else "${item.optString("title")} · $due")
+                tasks.add(TodayTask(
+                    id = item.optLong("id"),
+                    title = item.optString("title"),
+                    due = item.optString("due"),
+                ))
             }
         }
-        val notes = mutableListOf<String>()
+        val notes = mutableListOf<TodayNote>()
         body.optJSONArray("notes")?.let { array ->
             for (index in 0 until array.length()) {
                 val item = array.optJSONObject(index) ?: continue
-                notes.add(item.optString("title"))
+                notes.add(TodayNote(
+                    id = item.optString("id"),
+                    title = item.optString("title"),
+                ))
             }
         }
         TodayData(
             place = body.optString("place"),
             temperature = if (weather.has("temperature")) weather.optInt("temperature") else null,
             wind = if (weather.has("wind")) weather.optInt("wind") else null,
+            symbol = weather.optString("symbol"),
             events = events,
             tasks = tasks,
             notes = notes,
@@ -252,11 +271,93 @@ class Api(private val server: String, private val token: String = "") {
         Unit
     }
 
+    suspend fun events(days: Int = 7): List<TodayEvent> = withContext(Dispatchers.IO) {
+        val array = call("/api/m/events?days=$days").optJSONArray("events") ?: JSONArray()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            TodayEvent(item.optString("id"), item.optString("time"), item.optString("title"))
+        }
+    }
+
     /** Задача в Vikunja. due — YYYY-MM-DD или пусто. */
     suspend fun createTask(title: String, due: String = ""): JSONObject =
         withContext(Dispatchers.IO) {
             call("/api/m/task", "POST", JSONObject().put("title", title).put("due", due))
         }
+
+    suspend fun tasks(): List<TodayTask> = withContext(Dispatchers.IO) {
+        val array = call("/api/m/tasks").optJSONArray("tasks") ?: JSONArray()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            TodayTask(item.optLong("id"), item.optString("title"), item.optString("due"))
+        }
+    }
+
+    suspend fun completeTask(id: Long, done: Boolean = true) = withContext(Dispatchers.IO) {
+        call("/api/m/task/$id/done", "POST", JSONObject().put("done", done))
+        Unit
+    }
+
+    suspend fun deleteTask(id: Long) = withContext(Dispatchers.IO) {
+        call("/api/m/task/$id/delete", "POST")
+        Unit
+    }
+
+    // ── Заметки Open WebUI ──
+
+    suspend fun owuiNotes(): List<OwuiNote> = withContext(Dispatchers.IO) {
+        val array = call("/api/m/notes").optJSONArray("notes") ?: JSONArray()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            OwuiNote(item.optString("id"), item.optString("title"), "", item.optLong("updated_at"))
+        }
+    }
+
+    suspend fun owuiNote(id: String): OwuiNote = withContext(Dispatchers.IO) {
+        val body = call("/api/m/notes/$id")
+        OwuiNote(body.optString("id", id), body.optString("title"),
+            body.optString("content"), body.optLong("updated_at"))
+    }
+
+    suspend fun createOwuiNote(title: String, content: String): String = withContext(Dispatchers.IO) {
+        call("/api/m/notes", "POST", JSONObject().put("title", title).put("content", content))
+            .optString("id")
+    }
+
+    suspend fun updateOwuiNote(id: String, title: String, content: String) = withContext(Dispatchers.IO) {
+        call("/api/m/notes/$id", "POST", JSONObject().put("title", title).put("content", content))
+        Unit
+    }
+
+    suspend fun deleteOwuiNote(id: String) = withContext(Dispatchers.IO) {
+        call("/api/m/notes/$id/delete", "POST")
+        Unit
+    }
+
+    // ── Вольт Obsidian (владелец) ──
+
+    suspend fun vaultFiles(q: String = ""): List<VaultFile> = withContext(Dispatchers.IO) {
+        val path = if (q.isBlank()) "/api/m/vault/files" else "/api/m/vault/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}"
+        val array = call(path).optJSONArray("files") ?: JSONArray()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            VaultFile(item.optString("path"), item.optLong("size"))
+        }
+    }
+
+    suspend fun vaultRead(path: String): String = withContext(Dispatchers.IO) {
+        call("/api/m/vault/read?path=${java.net.URLEncoder.encode(path, "UTF-8")}")
+            .optString("content")
+    }
+
+    suspend fun vaultSearch(q: String): List<VaultResult> = withContext(Dispatchers.IO) {
+        val array = call("/api/m/vault/search?q=${java.net.URLEncoder.encode(q, "UTF-8")}")
+            .optJSONArray("results") ?: JSONArray()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            VaultResult(item.optString("path"), item.optString("snippet"))
+        }
+    }
 
     suspend fun status(): JSONObject = withContext(Dispatchers.IO) { call("/api/m/status") }
 }
