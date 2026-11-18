@@ -30,6 +30,7 @@ data class TodayData(
 data class OwuiNote(val id: String, val title: String, val content: String, val updatedAt: Long)
 data class VaultFile(val path: String, val size: Long)
 data class VaultResult(val path: String, val snippet: String)
+data class UploadedFile(val id: String, val name: String, val type: String, val raw: JSONObject)
 
 /** HTTP-клиент к Pi. Все запросы — только по HTTPS (см. network_security_config). */
 class Api(private val server: String, private val token: String = "") {
@@ -136,12 +137,26 @@ class Api(private val server: String, private val token: String = "") {
         history: List<ChatMessage>,
         prompt: String,
         onDelta: (String) -> Unit,
+        files: List<UploadedFile> = emptyList(),
     ): String = withContext(Dispatchers.IO) {
         val messages = JSONArray()
         history.forEach {
             messages.put(JSONObject().put("role", it.role).put("content", it.content))
         }
-        messages.put(JSONObject().put("role", "user").put("content", prompt))
+        val userMsg = JSONObject().put("role", "user").put("content", prompt)
+        if (files.isNotEmpty()) {
+            val arr = JSONArray()
+            files.forEach { f ->
+                arr.put(JSONObject()
+                    .put("type", "file")
+                    .put("id", f.id)
+                    .put("name", f.name)
+                    .put("url", "/api/v1/files/${f.id}")
+                    .put("file", f.raw))
+            }
+            userMsg.put("files", arr)
+        }
+        messages.put(userMsg)
         val payload = JSONObject()
             .put("chat_id", chatId)
             .put("model", model)
@@ -176,6 +191,28 @@ class Api(private val server: String, private val token: String = "") {
         }
         builder.toString()
     }
+
+    /** Загрузка файла в Open WebUI (для вложений в чат). */
+    suspend fun uploadFile(name: String, bytes: ByteArray, mime: String): UploadedFile =
+        withContext(Dispatchers.IO) {
+            val body = MultipartBody.Builder().setType(MultipartBody.FORM)
+                .addFormDataPart("file", name, bytes.toRequestBody(mime.toMediaType()))
+                .build()
+            val req = Request.Builder().url(base() + "/api/v1/files/")
+                .header("Authorization", "Bearer $token")
+                .post(body).build()
+            client.newCall(req).execute().use { response ->
+                val text = response.body?.string().orEmpty()
+                if (!response.isSuccessful) error("HTTP ${response.code}: ${text.take(120)}")
+                val obj = JSONObject(text)
+                UploadedFile(
+                    id = obj.optString("id"),
+                    name = obj.optString("filename", name),
+                    type = mime,
+                    raw = obj,
+                )
+            }
+        }
 
     suspend fun today(): TodayData = withContext(Dispatchers.IO) {
         val body = call("/api/m/today")

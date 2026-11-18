@@ -58,6 +58,7 @@ private data class LaunchAction(
     val openVoice: Boolean = false,
     val openToday: Boolean = false,
     val sharedText: String = "",
+    val sharedUri: android.net.Uri? = null,
 )
 
 class MainActivity : FragmentActivity() {
@@ -88,15 +89,18 @@ class MainActivity : FragmentActivity() {
 
     private fun parseIntent(intent: Intent?): LaunchAction {
         if (intent == null) return LaunchAction()
-        val shared = when (intent.action) {
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
-            else -> ""
+        var shared = ""
+        var sharedUri: android.net.Uri? = null
+        if (intent.action == Intent.ACTION_SEND) {
+            shared = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+            sharedUri = intent.getParcelableExtra(Intent.EXTRA_STREAM)
         }
         val data = intent.data
         val path = data?.host ?: data?.path?.trim('/') ?: ""
         val voice = intent.action == ACTION_VOICE || path == "voice"
         val today = intent.action == ACTION_TODAY || path == "today"
-        return LaunchAction(openVoice = voice, openToday = today, sharedText = shared)
+        return LaunchAction(openVoice = voice, openToday = today,
+            sharedText = shared, sharedUri = sharedUri)
     }
 
     companion object {
@@ -200,6 +204,7 @@ private fun AppRoot(
     var tempChat by remember { mutableStateOf(false) }
     var draft by remember { mutableStateOf("") }
     var autoRecord by remember { mutableStateOf(false) }
+    var sharedUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var reloadChats by remember { mutableIntStateOf(0) }
     var reloadToday by remember { mutableIntStateOf(0) }
 
@@ -210,8 +215,9 @@ private fun AppRoot(
             tab = 1
             reloadToday++
         }
-        if (action.sharedText.isNotBlank()) {
+        if (action.sharedText.isNotBlank() || action.sharedUri != null) {
             draft = action.sharedText
+            sharedUri = action.sharedUri
             autoRecord = false
             tempChat = false
             tab = 0
@@ -220,6 +226,7 @@ private fun AppRoot(
             draft = ""
             autoRecord = true
             tempChat = false
+            sharedUri = null
             tab = 0
             openChat = "" to "Голосовой запрос"
         }
@@ -242,11 +249,13 @@ private fun AppRoot(
             draft = draft,
             autoRecord = autoRecord,
             temporary = tempChat,
+            initialAttachment = sharedUri,
             onBack = {
                 openChat = null
                 draft = ""
                 autoRecord = false
                 tempChat = false
+                sharedUri = null
                 reloadChats++
             },
         )

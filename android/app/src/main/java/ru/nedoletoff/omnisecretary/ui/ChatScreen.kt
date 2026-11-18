@@ -3,9 +3,12 @@ package ru.nedoletoff.omnisecretary.ui
 import android.Manifest
 import android.content.Context
 import android.media.MediaPlayer
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,14 +22,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -41,6 +49,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,14 +59,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.ChatMessage
 import ru.nedoletoff.omnisecretary.data.Session
+import ru.nedoletoff.omnisecretary.data.UploadedFile
 import ru.nedoletoff.omnisecretary.voice.Recorder
 import java.io.File
+import java.util.UUID
 
 private fun playWav(context: Context, bytes: ByteArray, onDone: () -> Unit = {}) {
     if (bytes.isEmpty()) { onDone(); return }
@@ -89,6 +101,7 @@ fun ChatScreen(
     draft: String,
     autoRecord: Boolean = false,
     temporary: Boolean = false,
+    initialAttachment: Uri? = null,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -103,6 +116,9 @@ fun ChatScreen(
     var recording by remember { mutableStateOf(false) }
     var handsFree by remember { mutableStateOf(autoRecord) }
     var notice by remember { mutableStateOf("") }
+    val attachments = remember { mutableStateListOf<UploadedFile>() }
+    var uploading by remember { mutableStateOf(false) }
+    var cameraUri by remember { mutableStateOf<Uri?>(null) }
 
     var permissionGranted by remember { mutableStateOf(false) }
     fun startRecording() {
@@ -151,30 +167,90 @@ fun ChatScreen(
         }
     }
 
+    // Вложение, переданное через «Поделиться» из другого приложения.
+    LaunchedEffect(initialAttachment) {
+        if (initialAttachment != null) {
+            uploadAndAttach(initialAttachment, "application/octet-stream")
+        }
+    }
+
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
+    fun readUri(uri: Uri): Pair<String, ByteArray>? {
+        return runCatching {
+            val name = context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+            } ?: "file-${UUID.randomUUID()}"
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                ?: return null
+            name to bytes
+        }.getOrNull()
+    }
+
+    fun uploadAndAttach(uri: Uri, fallbackMime: String) {
+        val data = readUri(uri) ?: run { notice = "Не удалось прочитать файл"; return }
+        val mime = context.contentResolver.getType(uri) ?: fallbackMime
+        scope.launch {
+            uploading = true
+            try {
+                val file = api.uploadFile(data.first, data.second, mime)
+                attachments.add(file)
+                notice = "Вложение добавлено: ${file.name}"
+            } catch (e: Exception) {
+                notice = e.message ?: "Не удалось загрузить файл"
+            } finally {
+                uploading = false
+            }
+        }
+    }
+
+    val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) uploadAndAttach(uri, "image/*")
+    }
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) uploadAndAttach(uri, "application/octet-stream")
+    }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val uri = cameraUri
+        if (ok && uri != null) uploadAndAttach(uri, "image/jpeg")
+    }
+
+    fun launchCamera() {
+        val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+        val file = File(dir, "photo-${System.currentTimeMillis()}.jpg")
+        val uri = FileProvider.getUriForFile(
+            context, "${context.packageName}.fileprovider", file)
+        cameraUri = uri
+        takePicture.launch(uri)
+    }
+
     fun send(prompt: String) {
         val text = prompt.trim()
-        if (text.isEmpty() || busy) return
+        val files = attachments.toList()
+        if ((text.isEmpty() && files.isEmpty()) || busy || uploading) return
         val history = messages
-        messages = history + ChatMessage("user", text, System.currentTimeMillis()) +
+        val display = if (text.isNotBlank()) text else "[вложение]"
+        messages = history + ChatMessage("user", display, System.currentTimeMillis()) +
             ChatMessage("assistant", "", System.currentTimeMillis() + 1)
         input = ""
+        attachments.clear()
         busy = true
         notice = ""
         scope.launch {
             try {
                 if (activeChatId.isBlank()) activeChatId = api.newChat(temporary)
                 var answer = ""
-                api.stream(activeChatId, Session.model, history, text) { delta ->
+                val sendText = if (text.isNotBlank()) text else "Опиши вложение."
+                api.stream(activeChatId, Session.model, history, sendText, { delta ->
                     answer += delta
                     val current = messages.toMutableList()
                     val last = current.lastOrNull() ?: return@stream
                     current[current.lastIndex] = last.copy(content = last.content + delta)
                     messages = current
-                }
+                }, files)
                 if (handsFree && answer.isNotBlank()) speakAndMaybeListen(answer)
             } catch (failure: Exception) {
                 notice = failure.message ?: "Ошибка ответа"
@@ -279,14 +355,39 @@ fun ChatScreen(
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                 }
+                if (attachments.isNotEmpty() || uploading) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        attachments.forEach { file ->
+                            AssistChip(
+                                onClick = { attachments.remove(file) },
+                                label = { Text(file.name.take(18), maxLines = 1) },
+                                trailingIcon = { Icon(Icons.Filled.Close, null, Modifier.size(14.dp)) },
+                            )
+                        }
+                        if (uploading) CircularProgressIndicator(Modifier.size(18.dp))
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { toggleRecording() }) {
                         Icon(
                             if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
                             contentDescription = "Голос",
                             tint = if (recording) GruvboxRed else GruvboxYellow,
-                            modifier = Modifier.size(26.dp),
+                            modifier = Modifier.size(24.dp),
                         )
+                    }
+                    IconButton(onClick = { pickFile.launch(arrayOf("*/*")) }, enabled = !uploading) {
+                        Icon(Icons.Filled.AttachFile, contentDescription = "Вложить файл",
+                            tint = GruvboxBlue)
+                    }
+                    IconButton(onClick = { launchCamera() }, enabled = !uploading) {
+                        Icon(Icons.Filled.CameraAlt, contentDescription = "Камера",
+                            tint = GruvboxBlue)
                     }
                     OutlinedTextField(
                         value = input,
@@ -300,7 +401,7 @@ fun ChatScreen(
                     )
                     IconButton(
                         onClick = { send(input) },
-                        enabled = !busy && input.isNotBlank(),
+                        enabled = !busy && !uploading && (input.isNotBlank() || attachments.isNotEmpty()),
                     ) {
                         if (busy) CircularProgressIndicator(Modifier.size(20.dp))
                         else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Отправить",
