@@ -227,6 +227,17 @@ fun ChatScreen(
         }
     }
 
+    // Приватный чат: запрещаем скриншоты и предпросмотр в недавних.
+    androidx.compose.runtime.DisposableEffect(temporary) {
+        val window = (context as? android.app.Activity)?.window
+        if (temporary) {
+            window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        }
+        onDispose {
+            window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
     fun send(prompt: String) {
         val text = prompt.trim()
         val files = attachments.toList()
@@ -244,13 +255,13 @@ fun ChatScreen(
                 if (activeChatId.isBlank()) activeChatId = api.newChat(temporary)
                 var answer = ""
                 val sendText = if (text.isNotBlank()) text else "Опиши вложение."
-                api.stream(activeChatId, Session.model, history, sendText, { delta ->
+                api.stream(activeChatId, Session.model, history, sendText, onDelta = delta@{ delta ->
                     answer += delta
                     val current = messages.toMutableList()
-                    val last = current.lastOrNull() ?: return@stream
+                    val last = current.lastOrNull() ?: return@delta
                     current[current.lastIndex] = last.copy(content = last.content + delta)
                     messages = current
-                }, files)
+                }, files = files)
                 if (handsFree && answer.isNotBlank()) speakAndMaybeListen(answer)
             } catch (failure: Exception) {
                 notice = failure.message ?: "Ошибка ответа"
