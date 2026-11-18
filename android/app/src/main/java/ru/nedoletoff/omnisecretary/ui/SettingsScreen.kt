@@ -59,8 +59,8 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
                 status = buildString {
                     temp?.opt("value")?.let { append("Температура: $it °C\n") }
                     if (memory != null) {
-                        val used = memory.opt("used_mb", memory.opt("used", "?"))
-                        val total = memory.opt("total_mb", memory.opt("total", "?"))
+                        val used = (memory.opt("used_mb") ?: memory.opt("used") ?: "?").toString()
+                        val total = (memory.opt("total_mb") ?: memory.opt("total") ?: "?").toString()
                         append("Память: $used / $total МБ\n")
                     }
                     cpu?.opt("percent")?.let { append("CPU: $it%\n") }
@@ -68,8 +68,9 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
                     body.optString("uptime").takeIf { it.isNotBlank() }
                         ?.let { append("Uptime: $it\n") }
                     body.optJSONObject("disk")?.let { d ->
-                        val u = d.opt("used", ""); val t = d.opt("total", "")
-                        if (u.toString().isNotBlank()) append("Диск: $u / $t\n")
+                        val u = (d.opt("used") ?: "").toString()
+                        val t = (d.opt("total") ?: "").toString()
+                        if (u.isNotBlank()) append("Диск: $u / $t\n")
                     }
                 }.ifBlank { "Метрики недоступны" }
             }
