@@ -765,7 +765,7 @@ async def mobile_update_event(event_id: str, request: Request):
     except Exception:
         raise HTTPException(400, "ожидается JSON")
     payload = {}
-    title = _clean(body.get("title"))
+    title = str(body.get("title") or "").strip()
     if title:
         payload["title"] = title
     for field in ("start", "start_at", "end", "end_at", "description", "location"):
@@ -800,13 +800,13 @@ async def mobile_update_task(task_id: str, request: Request):
     except Exception:
         raise HTTPException(400, "ожидается JSON")
     payload = {}
-    title = _clean(body.get("title"))
+    title = str(body.get("title") or "").strip()
     if title:
         payload["title"] = title
     if "description" in body:
-        payload["description"] = _clean(body.get("description"))[:2000]
+        payload["description"] = str(body.get("description") or "").strip()[:2000]
     if "due" in body or "due_date" in body:
-        due = _clean(body.get("due") or body.get("due_date"))
+        due = str(body.get("due") or body.get("due_date") or "").strip()
         if due:
             payload["due_date"] = due
     if "done" in body:
