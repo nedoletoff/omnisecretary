@@ -167,13 +167,6 @@ fun ChatScreen(
         }
     }
 
-    // Вложение, переданное через «Поделиться» из другого приложения.
-    LaunchedEffect(initialAttachment) {
-        if (initialAttachment != null) {
-            uploadAndAttach(initialAttachment, "application/octet-stream")
-        }
-    }
-
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
@@ -225,6 +218,13 @@ fun ChatScreen(
             context, "${context.packageName}.fileprovider", file)
         cameraUri = uri
         takePicture.launch(uri)
+    }
+
+    // Вложение, переданное через «Поделиться» из другого приложения.
+    LaunchedEffect(initialAttachment) {
+        if (initialAttachment != null) {
+            uploadAndAttach(initialAttachment, "application/octet-stream")
+        }
     }
 
     fun send(prompt: String) {
