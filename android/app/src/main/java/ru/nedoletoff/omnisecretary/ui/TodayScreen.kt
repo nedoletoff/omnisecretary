@@ -41,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.nedoletoff.omnisecretary.data.Api
+import ru.nedoletoff.omnisecretary.data.ReminderItem
 import ru.nedoletoff.omnisecretary.data.TodayData
 import ru.nedoletoff.omnisecretary.notify.Reminders
 import java.time.LocalDate
@@ -57,6 +58,7 @@ fun TodayScreen(api: Api, reloadKey: Int) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf<TodayData?>(null) }
+    var reminders by remember { mutableStateOf<List<ReminderItem>>(emptyList()) }
     var error by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(true) }
@@ -67,6 +69,7 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         error = ""
         try {
             data = api.today()
+            reminders = runCatching { api.reminders() }.getOrDefault(emptyList())
         } catch (failure: Exception) {
             error = failure.message ?: "Не удалось загрузить сводку"
         } finally {
@@ -191,6 +194,32 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         }
 
         Section("Заметки", today.notes.map { it.title })
+
+        // Напоминания
+        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+            modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Напоминания", color = GruvboxYellow,
+                    style = MaterialTheme.typography.titleMedium)
+                if (reminders.isEmpty()) {
+                    Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    reminders.forEach { r ->
+                        Row(Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(r.text, color = GruvboxFg)
+                                Text(r.dueAt.replace('T', ' ').take(16), color = GruvboxGray,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                            TextButton(onClick = {
+                                runAction { api.deleteReminder(r.id); "Напоминание удалено" }
+                            }) { Text("×", color = GruvboxRed) }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     when (dialog) {

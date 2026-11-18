@@ -689,3 +689,69 @@ def vault_search(request: Request, q: str, limit: int = 20) -> JSONResponse:
         if len(results) >= limit:
             break
     return JSONResponse({"results": results, "engine": "scan"})
+
+# ── Напоминания (bot.db) ────────────────────────────────────────────────
+
+BOT_DB_PATH = Path(os.environ.get("BOT_DB_PATH", "/bot/bot.db"))
+
+
+@router.get("/reminders")
+def list_reminders(request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    if not BOT_DB_PATH.is_file():
+        return JSONResponse({"reminders": []})
+    try:
+        conn = sqlite3.connect(str(BOT_DB_PATH), timeout=5)
+        conn.row_factory = sqlite3.Row
+        # Владелец видит все несработавшие; остальные — по привязке tg_id если есть.
+        tg_id = 0
+        try:
+            row = conn.execute(
+                "SELECT tg_id FROM accounts WHERE owui_login = ? ORDER BY id DESC LIMIT 1",
+                (user.get("email", ""),)).fetchone()
+            if row:
+                tg_id = int(row["tg_id"] or 0)
+        except sqlite3.Error:
+            pass
+        if _is_owner(user) and tg_id == 0:
+            rows = conn.execute(
+                "SELECT id, tg_id, text, due_at, sent FROM reminders WHERE sent = 0 "
+                "ORDER BY due_at LIMIT 50").fetchall()
+        elif tg_id:
+            rows = conn.execute(
+                "SELECT id, tg_id, text, due_at, sent FROM reminders WHERE tg_id = ? AND sent = 0 "
+                "ORDER BY due_at LIMIT 50", (tg_id,)).fetchall()
+        else:
+            rows = []
+        conn.close()
+    except sqlite3.Error:
+        return JSONResponse({"reminders": []})
+    items = [{"id": r["id"], "text": r["text"], "due_at": r["due_at"]}
+             for r in rows]
+    return JSONResponse({"reminders": items})
+
+
+@router.post("/reminders/{reminder_id}/delete")
+async def delete_reminder(reminder_id: int, request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    if not BOT_DB_PATH.is_file():
+        raise HTTPException(404, "нет базы напоминаний")
+    try:
+        conn = sqlite3.connect(str(BOT_DB_PATH), timeout=5)
+        if _is_owner(user):
+            cur = conn.execute("DELETE FROM reminders WHERE id = ?", (reminder_id,))
+        else:
+            cur = conn.execute(
+                "DELETE FROM reminders WHERE id = ? AND tg_id IN "
+                "(SELECT tg_id FROM accounts WHERE owui_login = ?)",
+                (reminder_id, user.get("email", "")))
+        conn.commit()
+        deleted = cur.rowcount
+        conn.close()
+    except sqlite3.Error:
+        raise HTTPException(500, "ошибка базы")
+    if not deleted:
+        raise HTTPException(404, "напоминание не найдено")
+    return JSONResponse({"ok": True})

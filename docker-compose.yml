@@ -810,6 +810,32 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  # ── ntfy: self-hosted push-уведомления для приложения (профиль ntfy) ───
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: omni-ntfy
+    profiles: ["ntfy"]
+    restart: unless-stopped
+    command: serve
+    environment:
+      TZ: ${TZ:-UTC}
+      NTFY_BASE_URL: ${NTFY_BASE_URL:-http://localhost:8090}
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_AUTH_DEFAULT_ACCESS: ${NTFY_AUTH_DEFAULT_ACCESS:-deny-all}
+    volumes:
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/ntfy:/var/cache/ntfy
+      - ${VOLUMES_ROOT:-${DATA_ROOT}/volumes}/ntfy-etc:/etc/ntfy
+    ports:
+      - "127.0.0.1:8090:80"
+    networks:
+      - backend
+    mem_limit: 64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+
+
 networks:
   # nginx ↔ open-webui
   frontend:

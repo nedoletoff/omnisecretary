@@ -31,6 +31,7 @@ data class OwuiNote(val id: String, val title: String, val content: String, val 
 data class VaultFile(val path: String, val size: Long)
 data class VaultResult(val path: String, val snippet: String)
 data class UploadedFile(val id: String, val name: String, val type: String, val raw: JSONObject)
+data class ReminderItem(val id: Long, val text: String, val dueAt: String)
 
 /** HTTP-клиент к Pi. Все запросы — только по HTTPS (см. network_security_config). */
 class Api(private val server: String, private val token: String = "") {
@@ -296,6 +297,19 @@ class Api(private val server: String, private val token: String = "") {
             call("/api/m/reminder", "POST", JSONObject()
                 .put("text", text).put("due_at", dueAt).put("telegram", telegram))
         }
+
+    suspend fun reminders(): List<ReminderItem> = withContext(Dispatchers.IO) {
+        val array = call("/api/m/reminders").optJSONArray("reminders") ?: JSONArray()
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            ReminderItem(item.optLong("id"), item.optString("text"), item.optString("due_at"))
+        }
+    }
+
+    suspend fun deleteReminder(id: Long) = withContext(Dispatchers.IO) {
+        call("/api/m/reminders/$id/delete", "POST")
+        Unit
+    }
 
     /** Событие в календаре Open WebUI. start — ISO 8601 (локальное время). */
     suspend fun createEvent(title: String, start: String, durationMin: Int = 60,

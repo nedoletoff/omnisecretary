@@ -15,6 +15,23 @@ android {
         versionName = "0.2.0"
     }
 
+    signingConfigs {
+        create("release") {
+            // Для релизной подписи задайте в gradle.properties или переменных окружения:
+            // RELEASE_STORE_FILE, RELEASE_STORE_PASSWORD, RELEASE_KEY_ALIAS, RELEASE_KEY_PASSWORD
+            val storePath = (findProperty("RELEASE_STORE_FILE") as String?) ?: System.getenv("RELEASE_STORE_FILE")
+            if (!storePath.isNullOrBlank()) {
+                storeFile = file(storePath)
+                storePassword = (findProperty("RELEASE_STORE_PASSWORD") as String?)
+                    ?: System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = (findProperty("RELEASE_KEY_ALIAS") as String?)
+                    ?: System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = (findProperty("RELEASE_KEY_PASSWORD") as String?)
+                    ?: System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -24,6 +41,10 @@ android {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro")
+            val storePath = (findProperty("RELEASE_STORE_FILE") as String?) ?: System.getenv("RELEASE_STORE_FILE")
+            if (!storePath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

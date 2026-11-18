@@ -52,6 +52,12 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             color = GruvboxYellow)
         Text("Личный секретарь на вашем Raspberry Pi",
             style = MaterialTheme.typography.bodyMedium, color = GruvboxGray)
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Чаты с ИИ, голос, календарь и задачи, заметки в Obsidian — " +
+                "всё на вашем сервере. Данные не покидают ваш Pi.",
+            style = MaterialTheme.typography.bodySmall, color = GruvboxGray,
+        )
         Spacer(Modifier.height(28.dp))
 
         OutlinedTextField(
@@ -60,6 +66,7 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             label = { Text("Адрес сервера") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
+            supportingText = { Text("Например, https://nedoletoff.sknt.ru", color = GruvboxGray) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri,
                 imeAction = ImeAction.Next),
         )
@@ -108,7 +115,7 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
                             onLoggedIn()
                         }
                     } catch (failure: Exception) {
-                        error = failure.message ?: "Не удалось войти"
+                        error = failure.message ?: "Не удалось войти. Проверьте адрес и сеть."
                     } finally {
                         busy = false
                     }
@@ -121,7 +128,13 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             else Text("Войти")
         }
         Spacer(Modifier.height(16.dp))
-        Text("Регистрация — на сайте сервера: /register",
+        Text("Нет аккаунта? Регистрация на сервере: /register",
             style = MaterialTheme.typography.bodySmall, color = GruvboxGray)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Совет: добавьте виджет или плитку быстрого доступа — " +
+                "голосовой запрос запускается в одно касание.",
+            style = MaterialTheme.typography.bodySmall, color = GruvboxGray,
+        )
     }
 }
