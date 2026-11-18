@@ -71,7 +71,7 @@ private fun playWav(context: Context, bytes: ByteArray, onDone: () -> Unit = {})
         onDone()
     }
     player.setOnErrorListener { _, _, _ ->
-        runCatching { it.release() }
+        runCatching { player.release() }
         file.delete()
         onDone()
         true
