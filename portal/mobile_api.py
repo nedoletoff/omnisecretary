@@ -17,6 +17,7 @@ import os
 import sqlite3
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -251,19 +252,50 @@ def _ensure_calendar(token: str) -> str:
 
 # ── Эндпоинты ────────────────────────────────────────────────────────────
 
+_today_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _today_data(token: str) -> dict:
+    """Сводка «Сегодня»: источники опрашиваем параллельно и кэшируем на 20 с.
+
+    Погода через api.met.no often отвечает секундами; без параллельности
+    приложение ждёт все источники последовательно и кажется «зависшим».
+    """
+    now = time.time()
+    cached = _today_cache.get(token)
+    if cached and cached[0] > now:
+        return cached[1]
+    city, lat, lon = _place()
+    tasks = {}
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {
+            "weather": pool.submit(_weather, lat, lon),
+            "events": pool.submit(_events, token),
+            "tasks": pool.submit(_tasks),
+            "notes": pool.submit(_notes, token),
+        }
+        for key, future in futures.items():
+            try:
+                tasks[key] = future.result(timeout=12)
+            except Exception:  # noqa: BLE001 — один источник не ломает сводку
+                tasks[key] = [] if key != "weather" else {}
+    data = {
+        "place": city,
+        "weather": tasks.get("weather") or {},
+        "events": tasks.get("events") or [],
+        "tasks": tasks.get("tasks") or [],
+        "notes": tasks.get("notes") or [],
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    _today_cache[token] = (now + 20, data)
+    return data
+
+
 @router.get("/today")
 def today(request: Request) -> JSONResponse:
     token = _token(request)
     _user(token)
-    city, lat, lon = _place()
-    return JSONResponse({
-        "place": city,
-        "weather": _weather(lat, lon),
-        "events": _events(token),
-        "tasks": _tasks(),
-        "notes": _notes(token),
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    })
+    return JSONResponse(_today_data(token))
 
 
 @router.post("/voice")
