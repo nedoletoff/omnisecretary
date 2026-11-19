@@ -123,7 +123,7 @@ fun ChatListScreen(
         }
         ExtendedFloatingActionButton(
             onClick = onNewChat,
-            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+            icon = { Icon(Icons.Filled.Add, contentDescription = "Новый чат") },
             text = { Text("Новый чат") },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
