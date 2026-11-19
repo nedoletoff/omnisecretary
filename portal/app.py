@@ -1142,6 +1142,196 @@ def llm_admin_clear(request: Request, csrf: str = Form("")):
 
 
 
+# ── Панель администратора: модели, токены, ключи ────────────────────────
+
+def _admin_request(method: str, path: str, *, body: dict | None = None,
+                   params: dict | None = None) -> object:
+    """Запрос к Open WebUI от имени администратора."""
+    with httpx.Client(timeout=25) as client:
+        response = client.request(
+            method, f"{OWUI_URL}{path}", json=body, params=params,
+            headers={"Authorization": f"Bearer {admin_token()}"})
+    if response.status_code not in (200, 201):
+        raise RuntimeError(f"Open WebUI: {path} → HTTP {response.status_code}")
+    return response.json() if response.content else {}
+
+
+def _owner_or_403(request: Request):
+    session = read_session(request)
+    if not session:
+        return None, RedirectResponse("/portal/login", status_code=303)
+    if not OWNER or session.get("u") != OWNER:
+        return None, HTMLResponse(
+            page("Доступ закрыт", '<p class="sub">Страница только для владельца.</p>'),
+            status_code=403)
+    return session, None
+
+
+def _key_status(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    return "задан" if value else "не задан"
+
+
+@app.get("/admin/control", response_class=HTMLResponse)
+def admin_control(request: Request, message: str = "", error: int = 0):
+    """Модели, расход токенов и состояние ключей — только владелец."""
+    session, denied = _owner_or_403(request)
+    if denied:
+        return denied
+    try:
+        models_data = _admin_request(
+            "GET", "/api/v1/models/list", params={"page": 1})
+        models = models_data.get("items", []) if isinstance(models_data, dict) else []
+        usage = _admin_request("GET", "/api/v1/users/usage")
+    except Exception as exc:  # noqa: BLE001 — панель должна открываться и при сбое API
+        models, usage = [], {}
+        message = message or str(exc)
+
+    cards = []
+    for model in models[:40]:
+        mid = str(model.get("id", ""))
+        detail = {}
+        try:
+            detail = _admin_request(
+                "GET", "/api/v1/models/model", params={"id": mid})
+        except Exception:  # noqa: BLE001 — битая модель не ломает всю страницу
+            pass
+        params = detail.get("params") or model.get("params") or {}
+        meta = detail.get("meta") or model.get("meta") or {}
+        system = str(params.get("system") or "")
+        tools = meta.get("toolIds") or []
+        if isinstance(tools, dict):
+            tools = list(tools.keys())
+        active = bool(detail.get("is_active", model.get("is_active", True)))
+        base = str(detail.get("base_model_id") or model.get("base_model_id") or "")
+        cards.append(f"""
+<div class="mcard">
+  <div class="mhead"><b>{esc(mid)}</b> <span class="pill">{'вкл' if active else 'выкл'}</span></div>
+  <div class="muted">{esc(model.get('name') or mid)} · база: {esc(base or '—')}</div>
+  <form method="post" action="/portal/admin/control/model">
+    <input type="hidden" name="csrf" value="{csrf_token()}">
+    <input type="hidden" name="id" value="{esc(mid)}">
+    <label>Системный промпт (params.system)</label>
+    <textarea name="system" rows="5">{esc(system)}</textarea>
+    <label>Инструменты (toolIds, через запятую)</label>
+    <input name="tools" value="{esc(', '.join(str(t) for t in tools))}"
+           placeholder="web_search, mcp-vault">
+    <label class="check"><input type="checkbox" name="active" value="1"
+      {'checked' if active else ''}> доступна в списке моделей</label>
+    <button type="submit">Сохранить модель</button>
+  </form>
+</div>""")
+
+    totals = usage.get("totals") or {}
+    top_models = usage.get("top_models") or []
+    usage_rows = "".join(
+        f"<tr><td>{esc(row.get('model_id', '—'))}</td>"
+        f"<td>{esc(row.get('messages', 0))}</td>"
+        f"<td>{esc(row.get('input_tokens', 0))}</td>"
+        f"<td>{esc(row.get('output_tokens', 0))}</td>"
+        f"<td><b>{esc(row.get('total_tokens', 0))}</b></td></tr>"
+        for row in top_models[:12])
+    keys = [
+        ("OPENROUTER_KEY", "OpenRouter"),
+        ("OPENAI_API_KEY", "OpenAI / Basic LLM"),
+        ("LLM_USER_JWT_SECRET", "Per-user JWT шлюза"),
+        ("WEBUI_API_KEY", "API Open WebUI"),
+        ("VIKUNJA_API_TOKEN", "Vikunja"),
+        ("GITHUB_TOKEN", "GitHub MCP"),
+        ("TELEGRAM_BOT_TOKEN", "Telegram (профиль выключен)"),
+        ("PORTAL_SECRET", "Сессия портала"),
+    ]
+    def key_row(name: str, label: str) -> str:
+        status = _key_status(name)
+        css = "ok" if status == "задан" else "bad"
+        return (f"<tr><td>{esc(label)}</td><td>{esc(name)}</td>"
+                f'<td class="{css}">{status}</td></tr>')
+
+    key_rows = "".join(key_row(name, label) for name, label in keys)
+    system_cfg = llm.public(llm.SYSTEM_KEY)
+    body = f"""
+<style>
+.ac {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; }}
+.ac .mcard, .ac .panel {{ background:var(--bg1); border:1px solid var(--bg2);
+  border-radius:12px; padding:16px; }}
+.ac .mhead {{ display:flex; justify-content:space-between; gap:8px; }}
+.ac .pill {{ font-size:11px; padding:2px 8px; border-radius:99px; background:var(--bg2); }}
+.ac .muted, .ac .muted a {{ color:var(--gray); font-size:12px; }}
+.ac label {{ margin:12px 0 5px; }}
+.ac textarea {{ width:100%; padding:10px; border-radius:8px; border:1px solid var(--bg2);
+  background:var(--bg0); color:var(--fg); font:12px/1.5 ui-monospace,monospace; }}
+.ac .check {{ display:flex; align-items:center; gap:8px; }}
+.ac .check input {{ width:auto; }}
+.ac table {{ width:100%; border-collapse:collapse; font-size:12px; }}
+.ac td, .ac th {{ padding:5px 6px; border-bottom:1px solid var(--bg2); text-align:left; }}
+.ac .ok {{ color:var(--green); }} .ac .bad {{ color:var(--red); }}
+</style>
+<div class="ac">
+  <div class="panel" style="grid-column:1/-1">
+    <h2>Расход токенов и активность</h2>
+    <p class="muted">Всего {esc(totals.get('lifetime_tokens', 0))} токенов ·
+      ввод {esc(totals.get('input_tokens', 0))} · ответ {esc(totals.get('output_tokens', 0))} ·
+      чатов {esc(totals.get('total_chats', 0))} · сообщений {esc(totals.get('messages', 0))}</p>
+    <table><tr><th>Модель</th><th>Сообщ.</th><th>Ввод</th><th>Ответ</th><th>Всего</th></tr>
+      {usage_rows or '<tr><td colspan="5">нет данных</td></tr>'}</table>
+  </div>
+  <div class="panel" style="grid-column:1/-1">
+    <h2>Ключи</h2>
+    <p class="muted">Значения не показываются — только факт наличия.
+      Системный провайдер: {'вкл' if system_cfg.get('enabled') else 'выкл'} —
+      <a href="/portal/llm">настроить</a>.</p>
+    <table><tr><th>Назначение</th><th>Переменная</th><th>Статус</th></tr>{key_rows}</table>
+  </div>
+  {''.join(cards) or '<div class="panel">Модели не найдены.</div>'}
+</div>"""
+    return HTMLResponse(page("Управление", body, message, bool(error), wide=True))
+
+
+@app.post("/admin/control/model")
+def admin_control_model_save(
+    request: Request,
+    id: str = Form(...),
+    system: str = Form(""),
+    tools: str = Form(""),
+    active: str = Form(""),
+    csrf: str = Form(""),
+):
+    session, denied = _owner_or_403(request)
+    if denied:
+        return denied
+    if not csrf_ok(csrf):
+        return RedirectResponse(
+            "/portal/admin/control?error=1&message=Форма+устарела", status_code=303)
+    try:
+        detail = _admin_request("GET", "/api/v1/models/model", params={"id": id})
+        params = dict(detail.get("params") or {})
+        meta = dict(detail.get("meta") or {})
+        prompt = system.strip()
+        if prompt:
+            params["system"] = prompt
+        else:
+            params.pop("system", None)
+        ids = [item.strip() for item in tools.split(",") if item.strip()]
+        if ids:
+            meta["toolIds"] = ids
+        else:
+            meta.pop("toolIds", None)
+        _admin_request("POST", "/api/v1/models/model/update", body={
+            "id": id,
+            "name": detail.get("name") or id,
+            "base_model_id": detail.get("base_model_id"),
+            "meta": meta,
+            "params": params,
+            "is_active": active == "1",
+            "commit_message": "Изменено через панель администратора",
+        })
+    except Exception as exc:  # noqa: BLE001
+        return RedirectResponse(
+            "/portal/admin/control?error=1&message="
+            + urllib.parse.quote(str(exc)[:200]), status_code=303)
+    return RedirectResponse("/portal/admin/control?message=Модель+обновлена", status_code=303)
+
+
 # ── Рабочее пространство (календарь, задачи, заметки, Obsidian) ─────────
 
 VIKUNJA_URL = os.environ.get("VIKUNJA_BASE_URL", "http://vikunja:3456").rstrip("/")
