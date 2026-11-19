@@ -134,6 +134,7 @@ fun ChatScreen(
     var ocrBusy by remember { mutableStateOf(false) }
     var showDeviceActions by remember { mutableStateOf(false) }
     var deviceActionPrompt by remember { mutableStateOf<Pair<String, String>?>(null) } // title to hint
+    val c = OmniPalette.colors
 
     var permissionGranted by remember { mutableStateOf(false) }
     fun startRecording() {
@@ -393,7 +394,7 @@ fun ChatScreen(
                         Text(
                             if (temporary) "не сохраняется" else Session.model,
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (temporary) GruvboxAqua else GruvboxGray,
+                            color = if (temporary) c.info else c.textSecondary,
                             maxLines = 1)
                     }
                 },
@@ -405,13 +406,13 @@ fun ChatScreen(
                 actions = {
                     IconButton(onClick = { showDeviceActions = true }) {
                         Icon(Icons.Filled.Apps, contentDescription = "Действия на устройстве",
-                            tint = GruvboxBlue)
+                            tint = c.action)
                     }
                     IconToggleButton(checked = handsFree,
                         onCheckedChange = { handsFree = it }) {
                         Icon(Icons.Filled.Mic,
                             contentDescription = "Диалог без рук",
-                            tint = if (handsFree) GruvboxGreen else GruvboxGray)
+                            tint = if (handsFree) c.success else c.textSecondary)
                     }
                     IconButton(onClick = { speakLast() }) {
                         Icon(Icons.Filled.VolumeUp, contentDescription = "Озвучить")
@@ -421,14 +422,14 @@ fun ChatScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = GruvboxBg1, titleContentColor = GruvboxFg),
+                    containerColor = c.surface, titleContentColor = c.text),
             )
         },
-        containerColor = GruvboxBg,
+        containerColor = c.background,
         bottomBar = {
-            Column(Modifier.background(GruvboxBg1).padding(8.dp)) {
+            Column(Modifier.background(c.surface).padding(8.dp)) {
                 if (notice.isNotBlank()) {
-                    Text(notice, color = GruvboxGray,
+                    Text(notice, color = c.textSecondary,
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                 }
@@ -454,22 +455,22 @@ fun ChatScreen(
                         Icon(
                             if (recording) Icons.Filled.Stop else Icons.Filled.Mic,
                             contentDescription = "Голос",
-                            tint = if (recording) GruvboxRed else GruvboxYellow,
+                            tint = if (recording) c.danger else c.accent,
                             modifier = Modifier.size(24.dp),
                         )
                     }
                     IconButton(onClick = { pickFile.launch(arrayOf("*/*")) }, enabled = !uploading) {
                         Icon(Icons.Filled.AttachFile, contentDescription = "Вложить файл",
-                            tint = GruvboxBlue)
+                            tint = c.action)
                     }
                     IconButton(onClick = { launchCamera() }, enabled = !uploading && !ocrBusy) {
                         Icon(Icons.Filled.CameraAlt, contentDescription = "Камера",
-                            tint = GruvboxBlue)
+                            tint = c.action)
                     }
                     IconButton(onClick = { pickForOcr.launch("image/*") }, enabled = !ocrBusy && !busy) {
                         if (ocrBusy) CircularProgressIndicator(Modifier.size(18.dp))
                         else Icon(Icons.Filled.DocumentScanner, contentDescription = "Распознать текст с фото",
-                            tint = GruvboxAqua)
+                            tint = c.info)
                     }
                     OutlinedTextField(
                         value = input,
@@ -487,7 +488,7 @@ fun ChatScreen(
                     ) {
                         if (busy) CircularProgressIndicator(Modifier.size(20.dp))
                         else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Отправить",
-                            tint = GruvboxGreen)
+                            tint = c.success)
                     }
                 }
             }
@@ -506,13 +507,13 @@ fun ChatScreen(
                 Box(Modifier.fillMaxWidth()) {
                     Text(
                         text = message.content.ifBlank { "…" },
-                        color = if (isUser) GruvboxBg else GruvboxFg,
+                        color = if (isUser) c.onAccent else c.text,
                         style = MaterialTheme.typography.bodyMedium,
                         textAlign = if (isUser) TextAlign.End else TextAlign.Start,
                         modifier = Modifier
                             .align(if (isUser) Alignment.CenterEnd else Alignment.CenterStart)
                             .background(
-                                if (isUser) GruvboxYellow else GruvboxBg1,
+                                if (isUser) c.accent else c.surface,
                                 RoundedCornerShape(12.dp))
                             .padding(12.dp)
                             .fillMaxWidth(0.9f),
@@ -547,6 +548,7 @@ private fun DeviceActionsDialog(
     onPrefill: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val c = OmniPalette.colors
     var customTimer by remember { mutableStateOf("") }
     var customAlarm by remember { mutableStateOf("") }
     var customApp by remember { mutableStateOf("") }
@@ -554,17 +556,17 @@ private fun DeviceActionsDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = GruvboxBg1,
-        title = { Text("Действия на устройстве", color = GruvboxYellow) },
+        containerColor = c.surface,
+        title = { Text("Действия на устройстве", color = c.accent) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text("Как у ассистента: таймеры, будильники, приложения и поиск.",
-                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
 
-                Text("Таймер (минуты)", color = GruvboxFg)
+                Text("Таймер (минуты)", color = c.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(customTimer, { customTimer = it.filter { c -> c.isDigit() } },
                         modifier = Modifier.weight(1f), singleLine = true,
@@ -575,7 +577,7 @@ private fun DeviceActionsDialog(
                     }) { Text("Старт") }
                 }
 
-                Text("Будильник (ЧЧ:ММ)", color = GruvboxFg)
+                Text("Будильник (ЧЧ:ММ)", color = c.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(customAlarm, { customAlarm = it },
                         modifier = Modifier.weight(1f), singleLine = true,
@@ -588,7 +590,7 @@ private fun DeviceActionsDialog(
                     }) { Text("Поставить") }
                 }
 
-                Text("Открыть приложение", color = GruvboxFg)
+                Text("Открыть приложение", color = c.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(customApp, { customApp = it },
                         modifier = Modifier.weight(1f), singleLine = true,
@@ -599,7 +601,7 @@ private fun DeviceActionsDialog(
                     }) { Text("Открыть") }
                 }
 
-                Text("Поиск в интернете", color = GruvboxFg)
+                Text("Поиск в интернете", color = c.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(customSearch, { customSearch = it },
                         modifier = Modifier.weight(1f), singleLine = true,

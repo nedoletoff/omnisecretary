@@ -55,6 +55,7 @@ private enum class DialogKind { NONE, NOTE, REMINDER, EVENT, TASK }
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TodayScreen(api: Api, reloadKey: Int) {
+    val c = OmniPalette.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf<TodayData?>(null) }
@@ -173,14 +174,14 @@ fun TodayScreen(api: Api, reloadKey: Int) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Сегодня", style = MaterialTheme.typography.headlineSmall,
-                color = GruvboxYellow, modifier = Modifier.weight(1f))
+                color = c.accent, modifier = Modifier.weight(1f))
             IconButton(onClick = { scope.launch { load() } }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Обновить", tint = GruvboxBlue)
+                Icon(Icons.Filled.Refresh, contentDescription = "Обновить", tint = c.action)
             }
         }
 
         if (notice.isNotBlank()) {
-            Text(notice, color = GruvboxAqua, style = MaterialTheme.typography.bodySmall)
+            Text(notice, color = c.info, style = MaterialTheme.typography.bodySmall)
         }
         if (pendingNotes > 0 || pendingReminders > 0) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -188,7 +189,7 @@ fun TodayScreen(api: Api, reloadKey: Int) {
                     if (pendingNotes > 0) add("заметок: $pendingNotes")
                     if (pendingReminders > 0) add("напоминаний: $pendingReminders")
                 }.joinToString(", ")
-                Text("В очереди — $parts", color = GruvboxOrange,
+                Text("В очереди — $parts", color = c.warning,
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 TextButton(onClick = {
                     scope.launch {
@@ -206,29 +207,29 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             return@Column
         }
         if (error.isNotBlank()) {
-            Text(error, color = GruvboxRed)
+            Text(error, color = c.danger)
             return@Column
         }
         val today = data ?: return@Column
 
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp)) {
-                Text(today.place, color = GruvboxGray,
+                Text(today.place, color = c.textSecondary,
                     style = MaterialTheme.typography.bodySmall)
                 if (today.temperature != null) {
                     Text("${today.temperature}°C, ветер ${today.wind ?: 0} м/с",
-                        style = MaterialTheme.typography.headlineMedium, color = GruvboxFg)
+                        style = MaterialTheme.typography.headlineMedium, color = c.text)
                 } else {
-                    Text("Погода недоступна", color = GruvboxGray)
+                    Text("Погода недоступна", color = c.textSecondary)
                 }
             }
         }
 
         // Быстрые действия — создание без переключения в веб.
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface),
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Быстро добавить", color = GruvboxYellow,
+                Text("Быстро добавить", color = c.accent,
                     style = MaterialTheme.typography.titleMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -249,12 +250,12 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         }
 
         // События с удалением
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface),
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("События", color = GruvboxYellow, style = MaterialTheme.typography.titleMedium)
+                Text("События", color = c.accent, style = MaterialTheme.typography.titleMedium)
                 if (today.events.isEmpty()) {
-                    Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 } else {
                     today.events.forEach { event ->
                         EventRow(event,
@@ -271,12 +272,12 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         }
 
         // Задачи с выполнением и удалением
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface),
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Задачи", color = GruvboxYellow, style = MaterialTheme.typography.titleMedium)
+                Text("Задачи", color = c.accent, style = MaterialTheme.typography.titleMedium)
                 if (today.tasks.isEmpty()) {
-                    Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 } else {
                     today.tasks.forEach { task ->
                         TaskRow(task,
@@ -291,25 +292,25 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         Section("Заметки", today.notes.map { it.title })
 
         // Напоминания
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface),
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Напоминания", color = GruvboxYellow,
+                Text("Напоминания", color = c.accent,
                     style = MaterialTheme.typography.titleMedium)
                 if (reminders.isEmpty()) {
-                    Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 } else {
                     reminders.forEach { r ->
                         Row(Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(r.text, color = GruvboxFg)
-                                Text(r.dueAt.replace('T', ' ').take(16), color = GruvboxGray,
+                                Text(r.text, color = c.text)
+                                Text(r.dueAt.replace('T', ' ').take(16), color = c.textSecondary,
                                     style = MaterialTheme.typography.bodySmall)
                             }
                             TextButton(onClick = {
                                 runAction { api.deleteReminder(r.id); "Напоминание удалено" }
-                            }) { Text("×", color = GruvboxRed) }
+                            }) { Text("×", color = c.danger) }
                         }
                     }
                 }
@@ -405,14 +406,15 @@ fun TodayScreen(api: Api, reloadKey: Int) {
 
 @Composable
 private fun Section(title: String, lines: List<String>) {
-    Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+    val c = OmniPalette.colors
+    Card(colors = CardDefaults.cardColors(containerColor = c.surface),
         modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, color = GruvboxYellow, style = MaterialTheme.typography.titleMedium)
+            Text(title, color = c.accent, style = MaterialTheme.typography.titleMedium)
             if (lines.isEmpty()) {
-                Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
             } else {
-                lines.forEach { Text(it, color = GruvboxFg) }
+                lines.forEach { Text(it, color = c.text) }
             }
         }
     }
@@ -421,32 +423,35 @@ private fun Section(title: String, lines: List<String>) {
 @Composable
 private fun EventRow(event: ru.nedoletoff.omnisecretary.data.TodayEvent,
                      onDelete: () -> Unit, onEdit: () -> Unit) {
+    val c = OmniPalette.colors
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(if (event.time.isBlank()) event.title else "${event.time}  ${event.title}",
-                color = GruvboxFg)
+                color = c.text)
         }
-        TextButton(onClick = onEdit) { Text("✎", color = GruvboxBlue) }
-        TextButton(onClick = onDelete) { Text("×", color = GruvboxRed) }
+        TextButton(onClick = onEdit) { Text("✎", color = c.action) }
+        TextButton(onClick = onDelete) { Text("×", color = c.danger) }
     }
 }
 
 @Composable
 private fun TaskRow(task: ru.nedoletoff.omnisecretary.data.TodayTask,
                     onDone: () -> Unit, onDelete: () -> Unit, onEdit: () -> Unit) {
+    val c = OmniPalette.colors
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             val due = if (task.due.isBlank()) "" else " · ${task.due}"
-            Text("${task.title}$due", color = GruvboxFg)
+            Text("${task.title}$due", color = c.text)
         }
-        TextButton(onClick = onEdit) { Text("✎", color = GruvboxBlue) }
-        TextButton(onClick = onDone) { Text("✓", color = GruvboxGreen) }
-        TextButton(onClick = onDelete) { Text("×", color = GruvboxRed) }
+        TextButton(onClick = onEdit) { Text("✎", color = c.action) }
+        TextButton(onClick = onDone) { Text("✓", color = c.success) }
+        TextButton(onClick = onDelete) { Text("×", color = c.danger) }
     }
 }
 
 @Composable
 private fun NoteDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    val c = OmniPalette.colors
     var title by remember { mutableStateOf("") }
     var text by remember { mutableStateOf("") }
     AlertDialog(
@@ -459,7 +464,7 @@ private fun NoteDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) 
                 OutlinedTextField(text, { text = it }, label = { Text("Текст") },
                     minLines = 3)
                 Text("Сохранится в AI/Inbox и уйдёт коммитом в вольт.",
-                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
@@ -476,6 +481,7 @@ private fun ReminderDialog(
     onDismiss: () -> Unit,
     onSave: (String, LocalDateTime, Boolean) -> Unit,
 ) {
+    val c = OmniPalette.colors
     val now = LocalDateTime.now().plusHours(1).withMinute(0).withSecond(0).withNano(0)
     var text by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(now.toLocalDate().toString()) }
@@ -518,6 +524,7 @@ private fun EventDialog(
     onDismiss: () -> Unit,
     onSave: (String, LocalDateTime, Int) -> Unit,
 ) {
+    val c = OmniPalette.colors
     val now = LocalDateTime.now().plusHours(1).withMinute(0).withSecond(0).withNano(0)
     var title by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(now.toLocalDate().toString()) }
@@ -553,6 +560,7 @@ private fun EventDialog(
 
 @Composable
 private fun TaskDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    val c = OmniPalette.colors
     var title by remember { mutableStateOf("") }
     var due by remember { mutableStateOf("") }
     AlertDialog(
@@ -581,6 +589,7 @@ private fun TaskEditDialog(
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit,
 ) {
+    val c = OmniPalette.colors
     var title by remember { mutableStateOf(task.title) }
     var due by remember { mutableStateOf(task.due) }
     AlertDialog(
@@ -608,6 +617,7 @@ private fun EventEditDialog(
     onDismiss: () -> Unit,
     onSave: (String, String) -> Unit,
 ) {
+    val c = OmniPalette.colors
     var title by remember { mutableStateOf(event.title) }
     var description by remember { mutableStateOf("") }
     AlertDialog(
@@ -620,7 +630,7 @@ private fun EventEditDialog(
                 OutlinedTextField(description, { description = it },
                     label = { Text("Описание (необязательно)") }, minLines = 2)
                 Text("Время: ${event.time.ifBlank { "не указано" }}. Для изменения времени удалите и создайте событие заново.",
-                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {

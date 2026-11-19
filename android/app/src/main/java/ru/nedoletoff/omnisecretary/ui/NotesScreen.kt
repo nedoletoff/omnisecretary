@@ -58,15 +58,16 @@ import ru.nedoletoff.omnisecretary.data.VaultResult
 
 @Composable
 fun NotesScreen(api: Api) {
+    val c = OmniPalette.colors
     var tab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Заметки", "Obsidian")
 
     Column(Modifier.fillMaxSize()) {
-        TabRow(selectedTabIndex = tab, containerColor = GruvboxBg1,
-            contentColor = GruvboxYellow) {
+        TabRow(selectedTabIndex = tab, containerColor = c.surface,
+            contentColor = c.accent) {
             tabs.forEachIndexed { index, title ->
                 Tab(selected = tab == index, onClick = { tab = index },
-                    text = { Text(title, color = if (tab == index) GruvboxYellow else GruvboxGray) })
+                    text = { Text(title, color = if (tab == index) c.accent else c.textSecondary) })
             }
         }
         when (tab) {
@@ -78,6 +79,7 @@ fun NotesScreen(api: Api) {
 
 @Composable
 private fun OwuiNotesTab(api: Api) {
+    val c = OmniPalette.colors
     val scope = rememberCoroutineScope()
     var notes by remember { mutableStateOf<List<OwuiNote>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -134,20 +136,20 @@ private fun OwuiNotesTab(api: Api) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Заметки", style = MaterialTheme.typography.headlineSmall,
-                color = GruvboxYellow, modifier = Modifier.weight(1f))
+                color = c.accent, modifier = Modifier.weight(1f))
             IconButton(onClick = { scope.launch { load() } }) {
-                Icon(Icons.Filled.Refresh, "Обновить", tint = GruvboxBlue)
+                Icon(Icons.Filled.Refresh, "Обновить", tint = c.action)
             }
             IconButton(onClick = { creating = true }) {
-                Icon(Icons.Filled.Add, "Новая", tint = GruvboxGreen)
+                Icon(Icons.Filled.Add, "Новая", tint = c.success)
             }
         }
-        if (error.isNotBlank()) Text(error, color = GruvboxRed)
+        if (error.isNotBlank()) Text(error, color = c.danger)
         if (loading) { CircularProgressIndicator(); return@Column }
-        if (notes.isEmpty()) { Text("Нет заметок", color = GruvboxGray); return@Column }
+        if (notes.isEmpty()) { Text("Нет заметок", color = c.textSecondary); return@Column }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(notes, key = { it.id }) { note ->
-                Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+                Card(colors = CardDefaults.cardColors(containerColor = c.surface),
                     modifier = Modifier.fillMaxWidth().clickable {
                         scope.launch {
                             try { editing = api.owuiNote(note.id) }
@@ -155,7 +157,7 @@ private fun OwuiNotesTab(api: Api) {
                         }
                     }) {
                     Column(Modifier.padding(16.dp)) {
-                        Text(note.title.ifBlank { "Без названия" }, color = GruvboxFg,
+                        Text(note.title.ifBlank { "Без названия" }, color = c.text,
                             style = MaterialTheme.typography.titleMedium)
                     }
                 }
@@ -169,18 +171,19 @@ private fun NoteEditor(
     title: String, content: String, isNew: Boolean,
     onBack: () -> Unit, onSave: (String, String) -> Unit, onDelete: (() -> Unit)?,
 ) {
+    val c = OmniPalette.colors
     var t by remember { mutableStateOf(title) }
     var c by remember { mutableStateOf(content) }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Назад", tint = GruvboxFg) }
+            IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Назад", tint = c.text) }
             Text(if (isNew) "Новая заметка" else "Заметка",
-                style = MaterialTheme.typography.titleMedium, color = GruvboxYellow,
+                style = MaterialTheme.typography.titleMedium, color = c.accent,
                 modifier = Modifier.weight(1f))
             if (onDelete != null) {
-                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Удалить", tint = GruvboxRed) }
+                IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Удалить", tint = c.danger) }
             }
-            IconButton(onClick = { onSave(t, c) }) { Icon(Icons.Filled.Save, "Сохранить", tint = GruvboxGreen) }
+            IconButton(onClick = { onSave(t, c) }) { Icon(Icons.Filled.Save, "Сохранить", tint = c.success) }
         }
         OutlinedTextField(t, { t = it }, label = { Text("Заголовок") },
             modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -191,6 +194,7 @@ private fun NoteEditor(
 
 @Composable
 private fun VaultTab(api: Api) {
+    val c = OmniPalette.colors
     val scope = rememberCoroutineScope()
     var config by remember { mutableStateOf<VaultConfig?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -262,12 +266,12 @@ private fun VaultTab(api: Api) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { opened = null }) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = GruvboxFg)
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = c.text)
                 }
                 Text(opened!!.first, style = MaterialTheme.typography.titleSmall,
-                    color = GruvboxYellow, modifier = Modifier.weight(1f))
+                    color = c.accent, modifier = Modifier.weight(1f))
             }
-            Text(opened!!.second, color = GruvboxFg,
+            Text(opened!!.second, color = c.text,
                 modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()))
         }
         return
@@ -286,7 +290,7 @@ private fun VaultTab(api: Api) {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Obsidian-вольт", style = MaterialTheme.typography.headlineSmall,
-                color = GruvboxYellow, modifier = Modifier.weight(1f))
+                color = c.accent, modifier = Modifier.weight(1f))
             IconButton(onClick = {
                 scope.launch {
                     notice = "Синхронизация…"
@@ -296,17 +300,17 @@ private fun VaultTab(api: Api) {
                         loadConfig(); loadFiles()
                     } catch (e: Exception) { notice = e.message ?: "Ошибка синхронизации" }
                 }
-            }) { Icon(Icons.Filled.Sync, contentDescription = "Синхронизировать", tint = GruvboxBlue) }
+            }) { Icon(Icons.Filled.Sync, contentDescription = "Синхронизировать", tint = c.action) }
             IconButton(onClick = { showConfig = true }) {
-                Icon(Icons.Filled.Settings, contentDescription = "Настройки вольта", tint = GruvboxFg)
+                Icon(Icons.Filled.Settings, contentDescription = "Настройки вольта", tint = c.text)
             }
         }
 
         val c = config
         if (loading) { CircularProgressIndicator(); return@Column }
         if (c != null && c.configured && !c.ready) {
-            Text("Вольт подключён, но не готов: ${c.status}", color = GruvboxOrange)
-            if (c.lastError.isNotBlank()) Text(c.lastError, color = GruvboxRed,
+            Text("Вольт подключён, но не готов: ${c.status}", color = c.warning)
+            if (c.lastError.isNotBlank()) Text(c.lastError, color = c.danger,
                 style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = {
@@ -318,28 +322,28 @@ private fun VaultTab(api: Api) {
                 }) { Text("Подключить / синхронизировать") }
                 TextButton(onClick = { showConfig = true }) { Text("Изменить настройки") }
             }
-            if (notice.isNotBlank()) Text(notice, color = GruvboxAqua)
+            if (notice.isNotBlank()) Text(notice, color = c.info)
             return@Column
         }
 
-        if (notice.isNotBlank()) Text(notice, color = GruvboxAqua, style = MaterialTheme.typography.bodySmall)
+        if (notice.isNotBlank()) Text(notice, color = c.info, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query, { query = it }, label = { Text("Поиск") },
                 modifier = Modifier.weight(1f), singleLine = true)
             IconButton(onClick = { search() }) {
-                Icon(Icons.Filled.Search, contentDescription = "Искать", tint = GruvboxBlue)
+                Icon(Icons.Filled.Search, contentDescription = "Искать", tint = c.action)
             }
             IconButton(onClick = { query = ""; loadFiles() }) {
-                Icon(Icons.Filled.Refresh, contentDescription = "Обновить", tint = GruvboxFg)
+                Icon(Icons.Filled.Refresh, contentDescription = "Обновить", tint = c.text)
             }
         }
-        if (error.isNotBlank()) Text(error, color = GruvboxRed)
+        if (error.isNotBlank()) Text(error, color = c.danger)
         if (browsing) { CircularProgressIndicator(); return@Column }
         if (results.isNotEmpty()) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(results) { r ->
-                    Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+                    Card(colors = CardDefaults.cardColors(containerColor = c.surface),
                         modifier = Modifier.fillMaxWidth().clickable {
                             scope.launch {
                                 try { opened = r.path to api.vaultRead(r.path) }
@@ -347,26 +351,26 @@ private fun VaultTab(api: Api) {
                             }
                         }) {
                         Column(Modifier.padding(12.dp)) {
-                            Text(r.path, color = GruvboxAqua, style = MaterialTheme.typography.titleSmall)
+                            Text(r.path, color = c.info, style = MaterialTheme.typography.titleSmall)
                             if (r.snippet.isNotBlank())
-                                Text(r.snippet, color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                                Text(r.snippet, color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
             }
         } else {
             if (files.isEmpty() && error.isBlank())
-                Text("Нет доступных заметок (проверьте права на папки в настройках вольта).", color = GruvboxGray)
+                Text("Нет доступных заметок (проверьте права на папки в настройках вольта).", color = c.textSecondary)
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(files, key = { it.path }) { f ->
-                    Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+                    Card(colors = CardDefaults.cardColors(containerColor = c.surface),
                         modifier = Modifier.fillMaxWidth().clickable {
                             scope.launch {
                                 try { opened = f.path to api.vaultRead(f.path) }
                                 catch (e: Exception) { error = e.message ?: "Нет доступа или файл не найден" }
                             }
                         }) {
-                        Text(f.path, color = GruvboxFg, modifier = Modifier.padding(12.dp))
+                        Text(f.path, color = c.text, modifier = Modifier.padding(12.dp))
                     }
                 }
             }
@@ -381,6 +385,7 @@ private fun VaultConfigScreen(
     onClose: () -> Unit,
     onSaved: (String) -> Unit,
 ) {
+    val c = OmniPalette.colors
     val scope = rememberCoroutineScope()
     var repoUrl by remember { mutableStateOf(initial?.repoUrl ?: "") }
     var branch by remember { mutableStateOf(initial?.branch ?: "main") }
@@ -402,14 +407,14 @@ private fun VaultConfigScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onClose) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = GruvboxFg)
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = c.text)
             }
             Text("Настройка Obsidian-вольта", style = MaterialTheme.typography.titleMedium,
-                color = GruvboxYellow, modifier = Modifier.weight(1f))
+                color = c.accent, modifier = Modifier.weight(1f))
         }
 
         Text("Подключите свой приватный репозиторий GitHub. Токен хранится в зашифрованном виде на сервере и используется только для синхронизации этого вольта.",
-            color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+            color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
 
         OutlinedTextField(repoUrl, { repoUrl = it },
             label = { Text("URL репозитория (https)") },
@@ -425,13 +430,13 @@ private fun VaultConfigScreen(
             trailingIcon = {
                 IconButton(onClick = { showToken = !showToken }) {
                     Icon(if (showToken) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = "Показать токен", tint = GruvboxGray)
+                        contentDescription = "Показать токен", tint = c.textSecondary)
                 }
             },
         )
 
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Права доступа нейросети по папкам", color = GruvboxYellow,
+            Text("Права доступа нейросети по папкам", color = c.accent,
                 style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             TextButton(onClick = { showPermsHelp = !showPermsHelp }) { Text("?") }
         }
@@ -440,11 +445,11 @@ private fun VaultConfigScreen(
                 "Укажите папки/префиксы (например AI/, Дневник/, или пусто для всего вольта). " +
                 "Для пути применяется самое точное (длинное) совпадающее правило. " +
                 "Если правило не найдено — доступ запрещён.",
-                color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
         }
 
         perms.forEachIndexed { index, rule ->
-            Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+            Card(colors = CardDefaults.cardColors(containerColor = c.surface),
                 modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -457,7 +462,7 @@ private fun VaultConfigScreen(
                         if (perms.size > 1) {
                             IconButton(onClick = {
                                 perms = perms.toMutableList().also { it.removeAt(index) }
-                            }) { Icon(Icons.Filled.Delete, contentDescription = "Удалить правило", tint = GruvboxRed) }
+                            }) { Icon(Icons.Filled.Delete, contentDescription = "Удалить правило", tint = c.danger) }
                         }
                     }
                     PermissionToggles(rule) { updated ->
@@ -470,7 +475,7 @@ private fun VaultConfigScreen(
             perms = perms + VaultPermission(path = "", read = true, list = true, search = true)
         }) { Text("+ Добавить правило для папки") }
 
-        if (error.isNotBlank()) Text(error, color = GruvboxRed)
+        if (error.isNotBlank()) Text(error, color = c.danger)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (initial?.configured == true) {
@@ -481,7 +486,7 @@ private fun VaultConfigScreen(
                         catch (e: Exception) { error = e.message ?: "Ошибка" }
                         finally { busy = false }
                     }
-                }, enabled = !busy) { Text("Отключить", color = GruvboxRed) }
+                }, enabled = !busy) { Text("Отключить", color = c.danger) }
             }
             TextButton(onClick = { if (repoUrl.isNotBlank()) scope.launch {
                 busy = true; error = ""
@@ -503,12 +508,13 @@ private fun VaultConfigScreen(
 
         Text("Важно: ассистент сможет читать/писать/изменять только то, что вы явно разрешили выше. " +
             "Запись без соответствующего права блокируется на сервере.",
-            color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+            color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
     }
 }
 
 @Composable
 private fun PermissionToggles(rule: VaultPermission, onChange: (VaultPermission) -> Unit) {
+    val c = OmniPalette.colors
     val items = listOf(
         Triple("Чтение", "read", rule.read),
         Triple("Список", "list", rule.list),
@@ -536,7 +542,7 @@ private fun PermissionToggles(rule: VaultPermission, onChange: (VaultPermission)
                                 else -> rule
                             })
                         })
-                        Text(label, color = GruvboxFg, style = MaterialTheme.typography.bodySmall,
+                        Text(label, color = c.text, style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(start = 4.dp))
                     }
                 }

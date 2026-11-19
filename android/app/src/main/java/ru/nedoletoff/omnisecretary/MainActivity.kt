@@ -48,12 +48,9 @@ import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.notify.Reminders
 import ru.nedoletoff.omnisecretary.ui.ChatListScreen
 import ru.nedoletoff.omnisecretary.ui.ChatScreen
-import ru.nedoletoff.omnisecretary.ui.GruvboxBg
-import ru.nedoletoff.omnisecretary.ui.GruvboxFg
-import ru.nedoletoff.omnisecretary.ui.GruvboxGray
-import ru.nedoletoff.omnisecretary.ui.GruvboxYellow
 import ru.nedoletoff.omnisecretary.ui.LoginScreen
 import ru.nedoletoff.omnisecretary.ui.NotesScreen
+import ru.nedoletoff.omnisecretary.ui.OmniPalette
 import ru.nedoletoff.omnisecretary.ui.OmniTheme
 import ru.nedoletoff.omnisecretary.ui.SettingsScreen
 import ru.nedoletoff.omnisecretary.ui.TodayScreen
@@ -152,14 +149,15 @@ private fun BiometricGate(activity: FragmentActivity, onUnlocked: () -> Unit) {
 
     LaunchedEffect(Unit) { prompt() }
 
-    Box(Modifier.fillMaxSize().background(GruvboxBg), contentAlignment = Alignment.Center) {
+    val c = OmniPalette.colors
+    Box(Modifier.fillMaxSize().background(c.background), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(24.dp)) {
-            Icon(Icons.Filled.Lock, contentDescription = null, tint = GruvboxYellow)
-            Text("Приложение заблокировано", color = GruvboxFg,
+            Icon(Icons.Filled.Lock, contentDescription = null, tint = c.accent)
+            Text("Приложение заблокировано", color = c.text,
                 style = MaterialTheme.typography.titleMedium)
-            if (error.isNotBlank()) Text(error, color = GruvboxGray)
+            if (error.isNotBlank()) Text(error, color = c.textSecondary)
             Button(onClick = { prompt() }) { Text("Разблокировать") }
         }
     }

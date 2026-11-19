@@ -46,6 +46,7 @@ fun ChatListScreen(
     var busy by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val c = OmniPalette.colors
 
     suspend fun reload() {
         busy = true
@@ -68,9 +69,9 @@ fun ChatListScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Чаты", style = MaterialTheme.typography.headlineSmall,
-                    color = GruvboxYellow, modifier = Modifier.weight(1f))
+                    color = c.accent, modifier = Modifier.weight(1f))
                 androidx.compose.material3.TextButton(onClick = onPrivateChat) {
-                    Text("Приватный", color = GruvboxAqua)
+                    Text("Приватный", color = c.info)
                 }
             }
             when {
@@ -80,7 +81,7 @@ fun ChatListScreen(
                     contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(error, color = GruvboxRed)
+                        Text(error, color = c.danger)
                         androidx.compose.material3.TextButton(onClick = { scope.launch { reload() } }) {
                             Text("Повторить")
                         }
@@ -88,7 +89,7 @@ fun ChatListScreen(
                 }
                 chats.isEmpty() -> Box(Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center) {
-                    Text("Чатов пока нет. Начните новый.", color = GruvboxGray)
+                    Text("Чатов пока нет. Начните новый.", color = c.textSecondary)
                 }
                 else -> LazyColumn(Modifier.weight(1f)) {
                     items(chats, key = { it.id }) { chat ->
@@ -101,10 +102,10 @@ fun ChatListScreen(
                         ) {
                             Column(Modifier.weight(1f)) {
                                 Text(chat.title, style = MaterialTheme.typography.bodyLarge,
-                                    color = GruvboxFg)
+                                    color = c.text)
                                 Text("нажмите, чтобы открыть",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = GruvboxGray)
+                                    color = c.textSecondary)
                             }
                             IconButton(onClick = {
                                 scope.launch {
@@ -113,10 +114,10 @@ fun ChatListScreen(
                                 }
                             }) {
                                 Icon(Icons.Filled.Delete, contentDescription = "Удалить",
-                                    tint = GruvboxGray)
+                                    tint = c.textSecondary)
                             }
                         }
-                        HorizontalDivider(color = GruvboxBg2)
+                        HorizontalDivider(color = c.surfaceAlt)
                     }
                 }
             }

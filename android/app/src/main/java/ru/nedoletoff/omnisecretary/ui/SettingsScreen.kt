@@ -55,6 +55,7 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
         mutableStateOf(prefs.getString("ntfy_topic", "") ?: "")
     }
     var themeMode by remember { mutableStateOf(Session.themeMode) }
+    val c = OmniPalette.colors
 
     LaunchedEffect(Unit) {
         runCatching { api.models() }.onSuccess { models = it }
@@ -92,23 +93,23 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Настройки", style = MaterialTheme.typography.headlineSmall, color = GruvboxYellow)
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+        Text("Настройки", style = MaterialTheme.typography.headlineSmall, color = c.accent)
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Аккаунт", color = GruvboxYellow)
-                Text(Session.email.ifBlank { "—" }, color = GruvboxFg)
-                Text(Session.server, color = GruvboxGray,
+                Text("Аккаунт", color = c.accent)
+                Text(Session.email.ifBlank { "—" }, color = c.text)
+                Text(Session.server, color = c.textSecondary,
                     style = MaterialTheme.typography.bodySmall)
-                Text("Роль: ${Session.role.ifBlank { "—" }}", color = GruvboxGray,
+                Text("Роль: ${Session.role.ifBlank { "—" }}", color = c.textSecondary,
                     style = MaterialTheme.typography.bodySmall)
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Модель по умолчанию", color = GruvboxYellow)
+                Text("Модель по умолчанию", color = c.accent)
                 if (models.isEmpty()) {
-                    Text("Список недоступен", color = GruvboxGray,
+                    Text("Список недоступен", color = c.textSecondary,
                         style = MaterialTheme.typography.bodySmall)
                 } else {
                     models.forEach { (id, name) ->
@@ -121,11 +122,11 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
                         ) {
                             Text(
                                 if (id == Session.model) "● " else "○ ",
-                                color = if (id == Session.model) GruvboxGreen else GruvboxGray,
+                                color = if (id == Session.model) c.success else c.textSecondary,
                             )
                             Column {
-                                Text(name, color = GruvboxFg)
-                                if (name != id) Text(id, color = GruvboxGray,
+                                Text(name, color = c.text)
+                                if (name != id) Text(id, color = c.textSecondary,
                                     style = MaterialTheme.typography.labelSmall)
                             }
                         }
@@ -134,11 +135,11 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Оформление", color = GruvboxYellow)
+                Text("Оформление", color = c.accent)
                 Text("Gruvbox — фирменная тёмная тема. Material You — цвета из обоев/системы (Android 12+).",
-                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 listOf("gruvbox" to "Gruvbox", "material_you" to "Material You").forEach { (id, label) ->
                     Row(
                         Modifier
@@ -152,21 +153,21 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(if (id == themeMode) "● " else "○ ",
-                            color = if (id == themeMode) GruvboxGreen else GruvboxGray)
-                        Text(label, color = GruvboxFg)
+                            color = if (id == themeMode) c.success else c.textSecondary)
+                        Text(label, color = c.text)
                     }
                 }
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Безопасность", color = GruvboxYellow)
+                Text("Безопасность", color = c.accent)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Блокировка биометрией", color = GruvboxFg)
+                        Text("Блокировка биометрией", color = c.text)
                         Text("Запрашивать отпечаток/лицо при входе в приложение",
-                            color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                            color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                     }
                     Switch(checked = biometric, onCheckedChange = {
                         biometric = it
@@ -176,20 +177,20 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Уведомления", color = GruvboxYellow)
+                Text("Уведомления", color = c.accent)
                 Text("Каналы независимы: приложение, Telegram и ntfy настраиваются отдельно.",
-                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("В приложении", Modifier.weight(1f), color = GruvboxFg)
+                    Text("В приложении", Modifier.weight(1f), color = c.text)
                     Switch(checked = appNotifications, onCheckedChange = {
                         appNotifications = it
                         prefs.edit().putBoolean("notify_app", it).apply()
                     })
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Дублировать в Telegram", Modifier.weight(1f), color = GruvboxFg)
+                    Text("Дублировать в Telegram", Modifier.weight(1f), color = c.text)
                     Switch(checked = telegramEcho, onCheckedChange = {
                         telegramEcho = it
                         prefs.edit().putBoolean("notify_telegram", it).apply()
@@ -202,25 +203,25 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
                     label = { Text("ntfy topic (пусто — не использовать)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
                 Text("Для собственного ntfy укажите адрес сервера и topic. Push-подписка — через приложение ntfy/браузер на устройстве.",
-                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         }
 
-        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp)) {
-                Text("Устройство", color = GruvboxYellow)
+                Text("Устройство", color = c.accent)
                 when {
-                    status.isNotBlank() -> Text(status, color = GruvboxFg,
+                    status.isNotBlank() -> Text(status, color = c.text,
                         style = MaterialTheme.typography.bodySmall)
-                    statusError.isNotBlank() -> Text("Недоступно: $statusError", color = GruvboxGray,
+                    statusError.isNotBlank() -> Text("Недоступно: $statusError", color = c.textSecondary,
                         style = MaterialTheme.typography.bodySmall)
-                    else -> Text("Только для владельца", color = GruvboxGray,
+                    else -> Text("Только для владельца", color = c.textSecondary,
                         style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
 
-        HorizontalDivider(color = GruvboxBg2)
+        HorizontalDivider(color = c.surfaceAlt)
         Button(onClick = {
             Session.clear()
             onLogout()
@@ -228,6 +229,6 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
             Text("Выйти")
         }
         Text("OmniSecretary · self-hosted, данные на вашем Pi",
-            color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+            color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
     }
 }

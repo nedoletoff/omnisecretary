@@ -40,6 +40,8 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
     var error by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
+    val c = OmniPalette.colors
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -49,14 +51,14 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("OmniSecretary", style = MaterialTheme.typography.headlineMedium,
-            color = GruvboxYellow)
+            color = c.accent)
         Text("Личный секретарь на вашем Raspberry Pi",
-            style = MaterialTheme.typography.bodyMedium, color = GruvboxGray)
+            style = MaterialTheme.typography.bodyMedium, color = c.textSecondary)
         Spacer(Modifier.height(12.dp))
         Text(
             "Чаты с ИИ, голос, календарь и задачи, заметки в Obsidian — " +
                 "всё на вашем сервере. Данные не покидают ваш Pi.",
-            style = MaterialTheme.typography.bodySmall, color = GruvboxGray,
+            style = MaterialTheme.typography.bodySmall, color = c.textSecondary,
         )
         Spacer(Modifier.height(28.dp))
 
@@ -66,7 +68,7 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
             label = { Text("Адрес сервера") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
-            supportingText = { Text("Например, https://nedoletoff.sknt.ru", color = GruvboxGray) },
+            supportingText = { Text("Например, https://nedoletoff.sknt.ru", color = c.textSecondary) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri,
                 imeAction = ImeAction.Next),
         )
@@ -92,7 +94,7 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
         )
         if (error.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
-            Text(error, color = GruvboxRed, style = MaterialTheme.typography.bodySmall)
+            Text(error, color = c.danger, style = MaterialTheme.typography.bodySmall)
         }
         Spacer(Modifier.height(20.dp))
         Button(
@@ -129,12 +131,12 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         Text("Нет аккаунта? Регистрация на сервере: /register",
-            style = MaterialTheme.typography.bodySmall, color = GruvboxGray)
+            style = MaterialTheme.typography.bodySmall, color = c.textSecondary)
         Spacer(Modifier.height(8.dp))
         Text(
             "Совет: добавьте виджет или плитку быстрого доступа — " +
                 "голосовой запрос запускается в одно касание.",
-            style = MaterialTheme.typography.bodySmall, color = GruvboxGray,
+            style = MaterialTheme.typography.bodySmall, color = c.textSecondary,
         )
     }
 }
