@@ -75,11 +75,13 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         actionState.value = parseIntent(intent)
         setContent {
-            OmniTheme {
+            var themeMode by remember { mutableStateOf(Session.themeMode) }
+            OmniTheme(themeMode = themeMode) {
                 AppRoot(
                     activity = this,
                     action = actionState.value,
                     onActionConsumed = { actionState.value = LaunchAction() },
+                    onThemeChanged = { themeMode = it },
                 )
             }
         }
@@ -170,6 +172,7 @@ private fun AppRoot(
     activity: FragmentActivity,
     action: LaunchAction,
     onActionConsumed: () -> Unit,
+    onThemeChanged: (String) -> Unit = {},
 ) {
     var loggedIn by remember { mutableStateOf(Session.isLoggedIn) }
     var unlocked by remember { mutableStateOf(false) }
@@ -329,7 +332,11 @@ private fun AppRoot(
                 NotesScreen(api = api)
             }
             else -> Box(Modifier.padding(padding)) {
-                SettingsScreen(api = api, onLogout = { loggedIn = false; unlocked = false })
+                SettingsScreen(
+                    api = api,
+                    onLogout = { loggedIn = false; unlocked = false },
+                    onThemeChanged = onThemeChanged,
+                )
             }
         }
     }

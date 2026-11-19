@@ -31,7 +31,7 @@ import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.Session
 
 @Composable
-fun SettingsScreen(api: Api, onLogout: () -> Unit) {
+fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> Unit = {}) {
     val context = LocalContext.current
     val prefs = remember {
         context.getSharedPreferences("omni_settings", android.content.Context.MODE_PRIVATE)
@@ -54,6 +54,7 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
     var ntfyTopic by remember {
         mutableStateOf(prefs.getString("ntfy_topic", "") ?: "")
     }
+    var themeMode by remember { mutableStateOf(Session.themeMode) }
 
     LaunchedEffect(Unit) {
         runCatching { api.models() }.onSuccess { models = it }
@@ -128,6 +129,31 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit) {
                                     style = MaterialTheme.typography.labelSmall)
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Оформление", color = GruvboxYellow)
+                Text("Gruvbox — фирменная тёмная тема. Material You — цвета из обоев/системы (Android 12+).",
+                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+                listOf("gruvbox" to "Gruvbox", "material_you" to "Material You").forEach { (id, label) ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                themeMode = id
+                                Session.setThemeMode(id)
+                                onThemeChanged(id)
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(if (id == themeMode) "● " else "○ ",
+                            color = if (id == themeMode) GruvboxGreen else GruvboxGray)
+                        Text(label, color = GruvboxFg)
                     }
                 }
             }

@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DocumentScanner
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -72,6 +75,8 @@ import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.ChatMessage
 import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.data.UploadedFile
+import ru.nedoletoff.omnisecretary.data.Session
+import ru.nedoletoff.omnisecretary.device.DeviceActions
 import ru.nedoletoff.omnisecretary.voice.Recorder
 import java.io.File
 import java.util.UUID
@@ -127,6 +132,8 @@ fun ChatScreen(
     var uploading by remember { mutableStateOf(false) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
     var ocrBusy by remember { mutableStateOf(false) }
+    var showDeviceActions by remember { mutableStateOf(false) }
+    var deviceActionPrompt by remember { mutableStateOf<Pair<String, String>?>(null) } // title to hint
 
     var permissionGranted by remember { mutableStateOf(false) }
     fun startRecording() {
@@ -282,6 +289,21 @@ fun ChatScreen(
         val text = prompt.trim()
         val files = attachments.toList()
         if ((text.isEmpty() && files.isEmpty()) || busy || uploading) return
+
+        // Команды устройству (таймер, будильник, открыть приложение и т.д.)
+        if (files.isEmpty()) {
+            DeviceActions.tryExecute(context, text)?.let { result ->
+                messages = messages +
+                    ChatMessage("user", text, System.currentTimeMillis()) +
+                    ChatMessage("assistant",
+                        if (result.ok) "✓ ${result.message}" else "Не удалось: ${result.message}",
+                        System.currentTimeMillis() + 1)
+                input = ""
+                notice = if (result.ok) result.message else result.message
+                return
+            }
+        }
+
         val history = messages
         val display = if (text.isNotBlank()) text else "[вложение]"
         messages = history + ChatMessage("user", display, System.currentTimeMillis()) +
@@ -381,6 +403,10 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showDeviceActions = true }) {
+                        Icon(Icons.Filled.Apps, contentDescription = "Действия на устройстве",
+                            tint = GruvboxBlue)
+                    }
                     IconToggleButton(checked = handsFree,
                         onCheckedChange = { handsFree = it }) {
                         Icon(Icons.Filled.Mic,
@@ -495,4 +521,106 @@ fun ChatScreen(
             }
         }
     }
+
+    if (showDeviceActions) {
+        DeviceActionsDialog(
+            onDismiss = { showDeviceActions = false },
+            onAction = { result ->
+                showDeviceActions = false
+                messages = messages + ChatMessage("assistant",
+                    if (result.ok) "✓ ${result.message}" else "Не удалось: ${result.message}",
+                    System.currentTimeMillis())
+                notice = result.message
+            },
+            onPrefill = { template ->
+                showDeviceActions = false
+                input = template
+            },
+        )
+    }
+}
+
+@Composable
+private fun DeviceActionsDialog(
+    onDismiss: () -> Unit,
+    onAction: (DeviceActions.Result) -> Unit,
+    onPrefill: (String) -> Unit,
+) {
+    val context = LocalContext.current
+    var customTimer by remember { mutableStateOf("") }
+    var customAlarm by remember { mutableStateOf("") }
+    var customApp by remember { mutableStateOf("") }
+    var customSearch by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = GruvboxBg1,
+        title = { Text("Действия на устройстве", color = GruvboxYellow) },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Как у ассистента: таймеры, будильники, приложения и поиск.",
+                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+
+                Text("Таймер (минуты)", color = GruvboxFg)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(customTimer, { customTimer = it.filter { c -> c.isDigit() } },
+                        modifier = Modifier.weight(1f), singleLine = true,
+                        placeholder = { Text("5") })
+                    TextButton(onClick = {
+                        val min = customTimer.toIntOrNull() ?: 5
+                        onAction(DeviceActions.setTimer(context, min * 60))
+                    }) { Text("Старт") }
+                }
+
+                Text("Будильник (ЧЧ:ММ)", color = GruvboxFg)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(customAlarm, { customAlarm = it },
+                        modifier = Modifier.weight(1f), singleLine = true,
+                        placeholder = { Text("07:30") })
+                    TextButton(onClick = {
+                        val parts = customAlarm.split(":", ".", " ", limit = 2)
+                        val h = parts.getOrNull(0)?.toIntOrNull() ?: 7
+                        val m = parts.getOrNull(1)?.toIntOrNull() ?: 30
+                        onAction(DeviceActions.setAlarm(context, h, m))
+                    }) { Text("Поставить") }
+                }
+
+                Text("Открыть приложение", color = GruvboxFg)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(customApp, { customApp = it },
+                        modifier = Modifier.weight(1f), singleLine = true,
+                        placeholder = { Text("YouTube, Карты…") })
+                    TextButton(onClick = {
+                        if (customApp.isBlank()) onPrefill("Открой ")
+                        else onAction(DeviceActions.openApp(context, customApp))
+                    }) { Text("Открыть") }
+                }
+
+                Text("Поиск в интернете", color = GruvboxFg)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(customSearch, { customSearch = it },
+                        modifier = Modifier.weight(1f), singleLine = true,
+                        placeholder = { Text("запрос") })
+                    TextButton(onClick = {
+                        if (customSearch.isBlank()) onPrefill("Найди в интернете ")
+                        else onAction(DeviceActions.searchWeb(context, customSearch))
+                    }) { Text("Найти") }
+                }
+
+                TextButton(onClick = { onAction(DeviceActions.showAlarms(context)) }) {
+                    Text("Показать будильники/часы")
+                }
+                TextButton(onClick = { onPrefill("Маршрут до ") }) {
+                    Text("Маршрут (ввести адрес)")
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Закрыть") }
+        },
+    )
 }

@@ -27,6 +27,8 @@ object Session {
         private set
     var model: String = DEFAULT_MODEL
         private set
+    var themeMode: String = "gruvbox" // gruvbox | material_you
+        private set
 
     val isLoggedIn: Boolean get() = token.isNotBlank()
 
@@ -47,6 +49,7 @@ object Session {
         email = prefs.getString("email", "") ?: ""
         role = prefs.getString("role", "") ?: ""
         model = prefs.getString("model", DEFAULT_MODEL) ?: DEFAULT_MODEL
+        themeMode = prefs.getString("theme_mode", "gruvbox") ?: "gruvbox"
     }
 
     fun save(server: String, token: String, email: String, role: String) {
@@ -65,6 +68,11 @@ object Session {
     fun setModel(value: String) {
         model = value
         prefs.edit().putString("model", value).apply()
+    }
+
+    fun setThemeMode(value: String) {
+        themeMode = value
+        prefs.edit().putString("theme_mode", value).apply()
     }
 
     fun clear() {
