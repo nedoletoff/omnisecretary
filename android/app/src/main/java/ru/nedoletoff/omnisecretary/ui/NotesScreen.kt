@@ -250,14 +250,14 @@ private fun VaultTab(api: Api) {
 
     LaunchedEffect(Unit) {
         loadConfig()
-        val c = config
-        if (c?.configured == true && c.ready) loadFiles()
+        val cfg = config
+        if (c?.configured == true && cfg.ready) loadFiles()
     }
 
     // после загрузки конфига — подгружаем файлы, если готово
     LaunchedEffect(config?.configured, config?.ready) {
-        val c = config
-        if (c?.configured == true && c.ready && files.isEmpty() && results.isEmpty() && !browsing) {
+        val cfg = config
+        if (c?.configured == true && cfg.ready && files.isEmpty() && results.isEmpty() && !browsing) {
             loadFiles()
         }
     }
@@ -306,11 +306,11 @@ private fun VaultTab(api: Api) {
             }
         }
 
-        val c = config
+        val cfg = config
         if (loading) { CircularProgressIndicator(); return@Column }
-        if (c != null && c.configured && !c.ready) {
-            Text("Вольт подключён, но не готов: ${c.status}", color = c.warning)
-            if (c.lastError.isNotBlank()) Text(c.lastError, color = c.danger,
+        if (cfg != null && cfg.configured && !cfg.ready) {
+            Text("Вольт подключён, но не готов: ${cfg.status}", color = c.warning)
+            if (cfg.lastError.isNotBlank()) Text(cfg.lastError, color = c.danger,
                 style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = {
