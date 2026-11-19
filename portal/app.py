@@ -1141,6 +1141,506 @@ def llm_admin_clear(request: Request, csrf: str = Form("")):
     return RedirectResponse("/portal/admin/llm?message=Системный+провайдер+удалён", status_code=303)
 
 
+
+# ── Рабочее пространство (календарь, задачи, заметки, Obsidian) ─────────
+
+VIKUNJA_URL = os.environ.get("VIKUNJA_BASE_URL", "http://vikunja:3456").rstrip("/")
+VIKUNJA_TOKEN = os.environ.get("VIKUNJA_API_TOKEN", "")
+
+
+def _nav(active: str, session: dict) -> str:
+    items = [
+        ("workspace", "/portal/workspace", "Главная"),
+        ("calendar", "/portal/calendar", "Календарь"),
+        ("tasks", "/portal/tasks", "Задачи"),
+        ("notes", "/portal/notes", "Заметки"),
+        ("obsidian", "/portal/obsidian", "Obsidian"),
+    ]
+    parts = []
+    for key, href, label in items:
+        cls = "tab on" if key == active else "tab"
+        parts.append('<a class="' + cls + '" href="' + href + '">' + esc(label) + '</a>')
+    admin = ""
+    if OWNER and session.get("u") == OWNER:
+        admin = ('<a class="tab" href="/portal/admin/status">Устройство</a>'
+                 '<a class="tab" href="/portal/admin/llm">Провайдер</a>')
+    return ('<nav class="tabs"><a class="tab" href="/">Чат</a>' + "".join(parts)
+            + '<a class="tab" href="/portal/llm">Нейросеть</a>'
+            + '<a class="tab" href="/portal/account">Настройки</a>'
+            + admin + '<a class="tab" href="/portal/logout">Выход</a></nav>')
+
+
+def ws_page(title: str, body: str, session: dict, active: str,
+            message: str = "", error: bool = False) -> HTMLResponse:
+    notice = ""
+    if message:
+        color = "#fb4934" if error else "#b8bb26"
+        notice = '<div class="notice" style="border-color:' + color + '">' + esc(message) + '</div>'
+    nav = _nav(active, session)
+    html = """<!doctype html>
+<html lang="ru"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>""" + esc(title) + """ — OmniSecretary</title>
+<style>
+:root { --bg:#282828; --bg0:#1d2021; --bg1:#3c3836; --bg2:#504945; --bg3:#665c54;
+        --fg:#ebdbb2; --fg2:#d5c4a1; --gray:#928374; --yellow:#fabd2f; --orange:#fe8019;
+        --green:#b8bb26; --red:#fb4934; --blue:#83a598; --aqua:#8ec07c; --purple:#d3869b; }
+* { box-sizing:border-box; }
+body { margin:0; color:var(--fg); font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:linear-gradient(145deg,#1d2021 0%,#282828 45%,#32302f 100%); min-height:100vh; }
+.tabs { display:flex; flex-wrap:wrap; gap:6px; padding:14px 18px; border-bottom:1px solid var(--bg2);
+  position:sticky; top:0; background:rgba(29,32,33,.92); backdrop-filter:blur(8px); z-index:10; }
+.tab { padding:8px 12px; border-radius:10px; color:var(--fg2); text-decoration:none; font-size:13px;
+  border:1px solid transparent; }
+.tab:hover { background:var(--bg1); color:var(--fg); }
+.tab.on { background:rgba(250,189,47,.12); color:var(--yellow); border-color:rgba(250,189,47,.25); }
+.wrap { max-width:1100px; margin:0 auto; padding:22px 18px 40px; }
+h1 { font-size:26px; margin:0 0 6px; }
+h2 { font-size:16px; margin:22px 0 10px; color:var(--yellow); }
+p.sub { color:var(--gray); margin:0 0 18px; }
+.grid { display:grid; gap:14px; }
+@media(min-width:860px) { .grid.cols2 { grid-template-columns:1fr 1fr; } }
+.card { background:linear-gradient(180deg,rgba(60,56,54,.9),rgba(40,40,40,.9));
+  border:1px solid var(--bg2); border-radius:16px; padding:18px; }
+.notice { margin:0 0 16px; padding:12px 14px; border-left:3px solid var(--green);
+  background:rgba(40,40,40,.7); font-size:13px; border-radius:0 8px 8px 0; }
+label { display:block; font-size:12px; color:#bdae93; margin:12px 0 6px; }
+input,select,textarea { width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--bg2);
+  background:var(--bg0); color:var(--fg); font:14px/1.4 system-ui,sans-serif; }
+textarea { min-height:110px; resize:vertical; }
+button,.btn { display:inline-block; margin-top:10px; padding:10px 14px; border:0; border-radius:10px;
+  background:linear-gradient(135deg,var(--yellow),var(--orange)); color:#282828; font:700 13px/1 system-ui;
+  cursor:pointer; text-decoration:none; }
+button.sec,.btn.sec { background:var(--bg2); color:var(--fg); border:1px solid var(--bg3); }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--bg2); vertical-align:top; }
+th { color:var(--gray); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.5px; }
+a { color:var(--blue); }
+.dim { color:var(--gray); }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+.row > * { flex:1; min-width:140px; }
+.pill { display:inline-block; padding:3px 8px; border-radius:999px; font-size:12px; background:var(--bg2); }
+.ok { color:var(--green); } .bad { color:var(--red); }
+.cal { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+.day { background:var(--bg1); border:1px solid var(--bg2); border-radius:10px; min-height:72px; padding:8px; }
+.day.muted { opacity:.45; }
+.day.today { border-color:var(--yellow); }
+.day .n { font-weight:700; font-size:13px; }
+.dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--yellow); margin-right:4px; }
+.ev { font-size:12px; margin-top:4px; color:var(--fg2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ul { padding-left:18px; } li { margin:4px 0; }
+pre { white-space:pre-wrap; }
+</style></head><body>
+""" + nav + """
+<main class="wrap">""" + notice + body + """</main>
+</body></html>"""
+    return HTMLResponse(html)
+
+
+def _vikunja(method: str, path: str, body: dict | None = None, params: dict | None = None):
+    if not VIKUNJA_TOKEN:
+        return None
+    try:
+        with httpx.Client(timeout=20) as client:
+            r = client.request(method, VIKUNJA_URL + path, json=body, params=params,
+                               headers={"Authorization": f"Bearer {VIKUNJA_TOKEN}"})
+        if r.status_code >= 400:
+            return None
+        return r.json() if r.content else {}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _month_grid(year: int, month: int):
+    import calendar
+    cal = calendar.Calendar(firstweekday=0)
+    return list(cal.itermonthdates(year, month))
+
+
+@app.get("/workspace", response_class=HTMLResponse)
+def workspace(request: Request):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    token = session.get("t", "")
+    today = datetime.now()
+    start = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = start + timedelta(days=7)
+    evs, notes, tasks = [], [], []
+    try:
+        evs = owui_call(token, "GET", "/api/v1/calendars/events", params={
+            "start": start.strftime("%Y-%m-%dT%H:%M:%S"),
+            "end": end.strftime("%Y-%m-%dT%H:%M:%S")}) or []
+        notes = owui_call(token, "GET", "/api/v1/notes/") or []
+    except Exception:
+        pass
+    try:
+        t = _vikunja("GET", "/api/v1/tasks/all", params={"filter": "done = false"}) or []
+        tasks = t if isinstance(t, list) else []
+    except Exception:
+        pass
+    ev_html = "".join('<li>' + datetime.fromtimestamp(e["start_at"]/1e9).strftime('%d.%m %H:%M') + ' — ' + esc(e.get("title","")) + '</li>'
+                      for e in sorted(evs, key=lambda x: x.get("start_at",0))[:8]) or '<li class="dim">Нет событий на неделю</li>'
+    task_html = "".join('<li>' + ("✓ " if x.get("done") else "• ") + esc(x.get("title","")) + '</li>' for x in tasks[:8]) or '<li class="dim">Нет активных задач</li>'
+    note_html = "".join('<li>' + esc(n.get("title","без названия")) + '</li>' for n in notes[:8]) or '<li class="dim">Заметок пока нет</li>'
+    body = (
+        '<h1>Рабочее пространство</h1>'
+        '<p class="sub">Календарь, задачи, заметки и Obsidian — в одном месте. Пользователь: <b>' + esc(session.get('u','')) + '</b></p>'
+        '<div class="grid cols2">'
+        '<div class="card"><h2>Ближайшие события</h2><ul>' + ev_html + '</ul><a class="btn" href="/portal/calendar">Открыть календарь</a></div>'
+        '<div class="card"><h2>Задачи</h2><ul>' + task_html + '</ul><a class="btn" href="/portal/tasks">Открыть задачи</a></div>'
+        '<div class="card"><h2>Заметки</h2><ul>' + note_html + '</ul><a class="btn" href="/portal/notes">Открыть заметки</a></div>'
+        '<div class="card"><h2>Obsidian</h2><p>Персональный вольт: подключите репозиторий GitHub и настройте права по папкам. Нейросеть видит и меняет только то, что вы разрешили.</p>'
+        '<a class="btn" href="/portal/obsidian">Открыть Obsidian</a></div>'
+        '</div>'
+        '<div class="card" style="margin-top:14px"><h2>Поиск и ассистент</h2><ul>'
+        '<li>Веб-поиск в чате включён на уровне системы (DuckDuckGo). В диалоге с моделями, поддерживающими инструменты, ассистент может искать в интернете; можно попросить: «найди в интернете…».</li>'
+        '<li>Календарём, задачами и заметками удобно пользоваться в разделах выше; в чате ассистент поможет сформулировать или напомнить.</li>'
+        '<li>Личный провайдер и API-ключ настраиваются в разделе <a href="/portal/llm">Нейросеть</a>.</li>'
+        '</ul><a class="btn sec" href="/">Открыть чат</a></div>'
+    )
+    return ws_page("Рабочее пространство", body, session, "workspace")
+
+
+@app.get("/calendar", response_class=HTMLResponse)
+def calendar_page(request: Request, y: int = 0, m: int = 0, d: int = 0,
+                  message: str = "", error: int = 0):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    token = session.get("t", "")
+    today = datetime.now()
+    year = y or today.year
+    month = m or today.month
+    sel = d or today.day
+    try:
+        sel_date = datetime(year, month, min(sel, 28))
+    except Exception:
+        year, month, sel = today.year, today.month, today.day
+    start = datetime(year, month, 1)
+    end = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+    events = []
+    try:
+        events = owui_call(token, "GET", "/api/v1/calendars/events", params={
+            "start": (start - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S"),
+            "end": (end + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")}) or []
+    except Exception as exc:
+        message = message or f"Не удалось загрузить события: {type(exc).__name__}"
+        error = 1
+    by_day = {}
+    for e in events:
+        try:
+            dt = datetime.fromtimestamp(e.get("start_at", 0) / 1e9)
+            by_day.setdefault(dt.strftime("%Y-%m-%d"), []).append(e)
+        except Exception:
+            pass
+    days = _month_grid(year, month)
+    cells = []
+    for day in days:
+        key = day.strftime("%Y-%m-%d")
+        cls = "day"
+        if day.month != month:
+            cls += " muted"
+        if day.date() == today.date():
+            cls += " today"
+        evs = by_day.get(key, [])
+        dots = "".join('<div class="ev"><span class="dot"></span>' + esc(x.get("title",""))[:18] + '</div>' for x in evs[:2])
+        href = "/portal/calendar?y=%d&m=%d&d=%d" % (year, month, day.day)
+        cells.append('<a href="' + href + '" style="text-decoration:none;color:inherit"><div class="' + cls + '"><div class="n">' + str(day.day) + '</div>' + dots + '</div></a>')
+    prev_m = month - 1 or 12
+    prev_y = year - 1 if month == 1 else year
+    next_m = month % 12 + 1
+    next_y = year + 1 if month == 12 else year
+    sel_key = "%04d-%02d-%02d" % (year, month, sel)
+    day_events = sorted(by_day.get(sel_key, []), key=lambda x: x.get("start_at", 0))
+    rows = []
+    for e in day_events:
+        dt = datetime.fromtimestamp(e.get("start_at", 0) / 1e9)
+        rows.append('<tr><td>' + dt.strftime('%H:%M') + '</td><td>' + esc(e.get("title","")) + '</td><td class="dim">' + esc(e.get("description") or "") + '</td>'
+                    + '<td><form method="post" action="/portal/calendar/delete"><input type="hidden" name="csrf" value="' + csrf_token() + '">'
+                    + '<input type="hidden" name="id" value="' + esc(str(e.get("id",""))) + '">'
+                    + '<input type="hidden" name="y" value="' + str(year) + '"><input type="hidden" name="m" value="' + str(month) + '"><input type="hidden" name="d" value="' + str(sel) + '">'
+                    + '<button class="sec" type="submit">Удалить</button></form></td></tr>')
+    table = ("<table><tr><th>Время</th><th>Событие</th><th>Описание</th><th></th></tr>" + "".join(rows) + "</table>") if rows else '<p class="dim">На выбранный день событий нет.</p>'
+    month_names = ["","январь","февраль","март","апрель","май","июнь","июль","август","сентябрь","октябрь","ноябрь","декабрь"]
+    body = (
+        '<h1>Календарь</h1><p class="sub">Листайте месяцы, выбирайте дату и управляйте событиями.</p>'
+        '<div class="row" style="margin-bottom:12px;align-items:center">'
+        '<a class="btn sec" href="/portal/calendar?y=%d&m=%d&d=1">← %s</a>' % (prev_y, prev_m, month_names[prev_m])
+        + '<div style="text-align:center;font-weight:700;font-size:18px">' + month_names[month] + ' ' + str(year) + '</div>'
+        + '<a class="btn sec" href="/portal/calendar?y=%d&m=%d&d=1">%s →</a>' % (next_y, next_m, month_names[next_m])
+        + '</div>'
+        '<div class="cal" style="margin-bottom:8px;color:var(--gray);font-size:12px;text-align:center"><div>Пн</div><div>Вт</div><div>Ср</div><div>Чт</div><div>Пт</div><div>Сб</div><div>Вс</div></div>'
+        '<div class="cal">' + "".join(cells) + '</div>'
+        '<div class="card" style="margin-top:16px"><h2 style="margin-top:0">События: %02d.%02d.%d</h2>' % (sel, month, year)
+        + table
+        + '<h2>Добавить событие</h2><form method="post" action="/portal/calendar/event">'
+        '<input type="hidden" name="csrf" value="' + csrf_token() + '">'
+        '<input type="hidden" name="y" value="' + str(year) + '"><input type="hidden" name="m" value="' + str(month) + '"><input type="hidden" name="d" value="' + str(sel) + '">'
+        '<div class="row"><div><label>Название</label><input name="title" required placeholder="Встреча, звонок…"></div></div>'
+        '<div class="row"><div><label>Дата</label><input type="date" name="date" value="%04d-%02d-%02d" required></div>' % (year, month, sel)
+        + '<div><label>Время</label><input type="time" name="time" value="10:00" required></div>'
+        + '<div><label>Длительность</label><select name="minutes"><option value="30">30 мин</option><option value="60" selected>1 час</option><option value="120">2 часа</option></select></div></div>'
+        '<label>Описание</label><input name="description" placeholder="необязательно">'
+        '<button type="submit">Добавить событие</button></form></div>'
+    )
+    return ws_page("Календарь", body, session, "calendar", message, bool(error))
+
+
+@app.post("/calendar/event", response_class=HTMLResponse)
+def calendar_event(request: Request, title: str = Form(""), date: str = Form(""),
+                   time: str = Form("10:00"), minutes: int = Form(60),
+                   description: str = Form(""), csrf: str = Form(""),
+                   y: int = Form(0), m: int = Form(0), d: int = Form(0)):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return RedirectResponse("/portal/calendar?y=%d&m=%d&d=%d&error=1&message=Форма+устарела" % (y, m, d), status_code=303)
+    try:
+        token = session.get("t", "")
+        moment = datetime.strptime(date + " " + time, "%Y-%m-%d %H:%M")
+        calendars = owui_call(token, "GET", "/api/v1/calendars/")
+        calendar_id = calendars[0]["id"]
+        owui_call(token, "POST", "/api/v1/calendars/events/create", body={
+            "calendar_id": calendar_id, "title": title.strip(),
+            "description": description.strip(), "location": "", "all_day": False,
+            "start_at": int(moment.timestamp() * 1e9),
+            "end_at": int((moment + timedelta(minutes=int(minutes))).timestamp() * 1e9),
+        })
+        return RedirectResponse("/portal/calendar?y=%d&m=%d&d=%d&message=Событие+добавлено" % (y, m, d), status_code=303)
+    except Exception as exc:
+        return RedirectResponse("/portal/calendar?y=%d&m=%d&d=%d&error=1&message=Ошибка" % (y, m, d), status_code=303)
+
+
+@app.post("/calendar/delete", response_class=HTMLResponse)
+def calendar_delete(request: Request, id: str = Form(""), csrf: str = Form(""),
+                    y: int = Form(0), m: int = Form(0), d: int = Form(0)):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if csrf_ok(csrf):
+        try:
+            owui_call(session.get("t", ""), "DELETE", "/api/v1/calendars/events/" + id + "/delete")
+        except Exception:
+            pass
+    return RedirectResponse("/portal/calendar?y=%d&m=%d&d=%d" % (y, m, d), status_code=303)
+
+
+@app.get("/tasks", response_class=HTMLResponse)
+def tasks_page(request: Request, message: str = "", error: int = 0):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    tasks = _vikunja("GET", "/api/v1/tasks/all", params={"filter": "done = false"}) or []
+    done_tasks = _vikunja("GET", "/api/v1/tasks/all", params={"filter": "done = true"}) or []
+    if not isinstance(tasks, list):
+        tasks = []
+    if not isinstance(done_tasks, list):
+        done_tasks = []
+    rows = []
+    for t in tasks[:100]:
+        due = t.get("due_date") or ""
+        if isinstance(due, str) and due.startswith("0001"):
+            due = ""
+        rows.append('<tr><td>' + esc(t.get("title","")) + '</td><td class="dim">' + esc(str(due)[:16]) + '</td>'
+                    + '<td><form method="post" action="/portal/tasks/done" style="display:inline"><input type="hidden" name="csrf" value="' + csrf_token() + '">'
+                    + '<input type="hidden" name="id" value="' + str(t.get("id")) + '"><button class="sec" type="submit">Готово</button></form> '
+                    + '<form method="post" action="/portal/tasks/delete" style="display:inline"><input type="hidden" name="csrf" value="' + csrf_token() + '">'
+                    + '<input type="hidden" name="id" value="' + str(t.get("id")) + '"><button class="sec" type="submit">Удалить</button></form></td></tr>')
+    table = ("<table><tr><th>Задача</th><th>Срок</th><th></th></tr>" + "".join(rows) + "</table>") if rows else '<p class="dim">Активных задач нет.</p>'
+    done_rows = "".join('<li class="dim">✓ ' + esc(t.get("title","")) + '</li>' for t in done_tasks[:20]) or '<li class="dim">Нет выполненных</li>'
+    warn = "" if VIKUNJA_TOKEN else '<div class="notice" style="border-color:#fabd2f">Vikunja не настроен (нет API-токена на сервере). Задачи недоступны.</div>'
+    body = (
+        '<h1>Задачи</h1><p class="sub">Список дел в Vikunja. Отмечайте выполненные и добавляйте новые.</p>' + warn
+        + '<div class="card"><h2 style="margin-top:0">Активные</h2>' + table
+        + '<h2>Новая задача</h2><form method="post" action="/portal/tasks/create"><input type="hidden" name="csrf" value="' + csrf_token() + '">'
+        + '<div class="row"><div><label>Название</label><input name="title" required placeholder="Что нужно сделать"></div>'
+        + '<div><label>Срок (необязательно)</label><input type="datetime-local" name="due"></div></div>'
+        + '<label>Описание</label><textarea name="description" placeholder="подробности"></textarea>'
+        + '<button type="submit">Добавить задачу</button></form></div>'
+        + '<div class="card" style="margin-top:14px"><h2 style="margin-top:0">Недавно выполненные</h2><ul>' + done_rows + '</ul></div>'
+    )
+    return ws_page("Задачи", body, session, "tasks", message, bool(error))
+
+
+@app.post("/tasks/create", response_class=HTMLResponse)
+def tasks_create(request: Request, title: str = Form(""), description: str = Form(""),
+                 due: str = Form(""), csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return RedirectResponse("/portal/tasks?error=1&message=Форма+устарела", status_code=303)
+    payload = {"title": title.strip(), "description": description.strip()}
+    if due.strip():
+        payload["due_date"] = due.strip() + ":00Z" if len(due.strip()) == 16 else due.strip()
+    r = _vikunja("PUT", "/api/v1/projects/1/tasks", body=payload)
+    if r is None:
+        return RedirectResponse("/portal/tasks?error=1&message=Не+удалось+создать+задачу", status_code=303)
+    return RedirectResponse("/portal/tasks?message=Задача+добавлена", status_code=303)
+
+
+@app.post("/tasks/done", response_class=HTMLResponse)
+def tasks_done(request: Request, id: int = Form(0), csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if csrf_ok(csrf) and id:
+        _vikunja("POST", "/api/v1/tasks/" + str(id), body={"done": True})
+    return RedirectResponse("/portal/tasks", status_code=303)
+
+
+@app.post("/tasks/delete", response_class=HTMLResponse)
+def tasks_delete(request: Request, id: int = Form(0), csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if csrf_ok(csrf) and id:
+        _vikunja("DELETE", "/api/v1/tasks/" + str(id))
+    return RedirectResponse("/portal/tasks", status_code=303)
+
+
+@app.get("/notes", response_class=HTMLResponse)
+def notes_page(request: Request, note: str = "", message: str = "", error: int = 0):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    token = session.get("t", "")
+    notes = []
+    try:
+        notes = owui_call(token, "GET", "/api/v1/notes/") or []
+    except Exception as exc:
+        message = message or f"Не удалось загрузить заметки: {type(exc).__name__}"
+        error = 1
+    selected = None
+    if note:
+        for n in notes:
+            if n.get("id") == note:
+                selected = n
+                break
+        if not selected:
+            try:
+                selected = owui_call(token, "GET", "/api/v1/notes/" + note)
+            except Exception:
+                selected = None
+    items = []
+    for n in notes[:100]:
+        mark = " <b>(открыта)</b>" if n.get("id") == note else ""
+        items.append('<li><a href="/portal/notes?note=' + esc(n.get("id","")) + '">' + esc(n.get("title","без названия")) + '</a>' + mark + '</li>')
+    list_html = "<ul>" + "".join(items) + "</ul>" if items else '<p class="dim">Заметок пока нет. Создайте первую справа.</p>'
+    view = ""
+    if selected:
+        content = ((selected.get("data") or {}).get("content") or {}).get("md", "")
+        view = ('<div class="card"><h2 style="margin-top:0">' + esc(selected.get("title","")) + '</h2>'
+                + '<pre style="white-space:pre-wrap;font-family:inherit;color:var(--fg2)">' + esc(content) + '</pre>'
+                + '<form method="post" action="/portal/notes/delete"><input type="hidden" name="csrf" value="' + csrf_token() + '">'
+                + '<input type="hidden" name="id" value="' + esc(selected.get("id","")) + '">'
+                + '<button class="sec" type="submit">Удалить заметку</button></form></div>')
+    body = (
+        '<h1>Заметки</h1><p class="sub">Заметки Open WebUI — хранятся на сервере в вашей учётной записи, доступны в вебе и приложении.</p>'
+        '<div class="grid cols2"><div class="card"><h2 style="margin-top:0">Список</h2>' + list_html + '</div><div>'
+        + (view or '<div class="card"><p class="dim">Выберите заметку слева, чтобы прочитать.</p></div>')
+        + '<div class="card" style="margin-top:14px"><h2 style="margin-top:0">Новая заметка</h2>'
+        + '<form method="post" action="/portal/notes/create"><input type="hidden" name="csrf" value="' + csrf_token() + '">'
+        + '<label>Заголовок</label><input name="title" required placeholder="Название заметки">'
+        + '<label>Текст</label><textarea name="text" placeholder="Содержание (Markdown)" style="min-height:180px"></textarea>'
+        + '<button type="submit">Сохранить заметку</button></form></div></div></div>'
+    )
+    return ws_page("Заметки", body, session, "notes", message, bool(error))
+
+
+@app.post("/notes/create", response_class=HTMLResponse)
+def notes_create(request: Request, title: str = Form(""), text: str = Form(""), csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return RedirectResponse("/portal/notes?error=1&message=Форма+устарела", status_code=303)
+    try:
+        owui_call(session.get("t", ""), "POST", "/api/v1/notes/create", body={
+            "title": title.strip(), "data": {"content": {"md": text}}})
+        return RedirectResponse("/portal/notes?message=Заметка+сохранена", status_code=303)
+    except Exception:
+        return RedirectResponse("/portal/notes?error=1&message=Ошибка+сохранения", status_code=303)
+
+
+@app.post("/notes/delete", response_class=HTMLResponse)
+def notes_delete(request: Request, id: str = Form(""), csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if csrf_ok(csrf):
+        try:
+            owui_call(session.get("t", ""), "DELETE", "/api/v1/notes/" + id + "/delete")
+        except Exception:
+            pass
+    return RedirectResponse("/portal/notes", status_code=303)
+
+
+@app.get("/obsidian", response_class=HTMLResponse)
+def obsidian_page(request: Request, path: str = "", q: str = "", message: str = "", error: int = 0):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    uid = session.get("uid", "")
+    cfg = {}
+    try:
+        cfg = pvaults.public(uid) or {}
+    except Exception:
+        cfg = {}
+    configured = cfg.get("configured")
+    status = cfg.get("status") or "не настроен"
+    body_top = (
+        '<h1>Obsidian</h1><p class="sub">Персональный вольт в вашем GitHub. Доступ нейросети ограничен правилами по папкам, которые задаёте вы.</p>'
+        '<div class="card"><h2 style="margin-top:0">Состояние</h2>'
+        '<p>Подключён: <b>' + ('да' if configured else 'нет') + '</b> · Статус: <span class="pill">' + esc(str(status)) + '</span></p>'
+        '<p class="dim">Настройка репозитория, PAT и прав по папкам — в приложении (Заметки → Obsidian). Ниже — просмотр и поиск, если вольт подключён и синхронизирован.</p></div>'
+    )
+    browser = ""
+    if configured:
+        try:
+            files = pvaults.list_files(uid, path or "")
+            if files is not None:
+                flist = files if isinstance(files, list) else files.get("files", [])
+                items = []
+                for f in flist[:200]:
+                    icon = "📁" if f.get("type") == "dir" else "📄"
+                    fpath = f.get("path", "")
+                    items.append('<li>' + icon + ' <a href="/portal/obsidian?path=' + urllib.parse.quote(fpath) + '">' + esc(f.get("name","")) + '</a></li>')
+                browser = '<div class="card" style="margin-top:14px"><h2 style="margin-top:0">Файлы: /' + esc(path) + '</h2><ul>' + ("".join(items) or '<li class="dim">пусто</li>') + '</ul></div>'
+            if path and path.endswith('.md'):
+                content = pvaults.read_file(uid, path)
+                if content and isinstance(content, dict):
+                    txt = content.get("content") or content.get("text") or ""
+                    browser += '<div class="card" style="margin-top:14px"><h2 style="margin-top:0">' + esc(path) + '</h2><pre style="white-space:pre-wrap">' + esc(txt[:12000]) + '</pre></div>'
+        except Exception as exc:
+            browser = '<div class="card" style="margin-top:14px"><p class="bad">Не удалось открыть вольт: ' + esc(type(exc).__name__) + '. Синхронизируйте и проверьте права доступа.</p></div>'
+    search_block = ""
+    if configured:
+        results = []
+        if q:
+            try:
+                results = pvaults.search(uid, q) or []
+                if isinstance(results, dict):
+                    results = results.get("results", [])
+            except Exception:
+                results = []
+        if q:
+            if results:
+                res_html = "".join('<li><a href="/portal/obsidian?path=' + urllib.parse.quote(r.get("path","")) + '">' + esc(r.get("path","")) + '</a> <span class="dim">' + esc((r.get("snippet") or "")[:120]) + '</span></li>' for r in results[:30])
+                res_block = '<ul>' + res_html + '</ul>'
+            else:
+                res_block = '<p class="dim">Ничего не найдено.</p>'
+        else:
+            res_block = '<p class="dim">Введите запрос для поиска.</p>'
+        search_block = ('<div class="card" style="margin-top:14px"><h2 style="margin-top:0">Поиск по вольту</h2>'
+                        + '<form method="get" action="/portal/obsidian"><div class="row"><div><label>Запрос</label><input name="q" value="' + esc(q) + '" placeholder="слово или фраза"></div>'
+                        + '<div style="flex:0"><button type="submit">Найти</button></div></div></form>' + res_block + '</div>')
+    body = body_top + browser + search_block
+    return ws_page("Obsidian", body, session, "obsidian", message, bool(error))
+
+
 # Инициализация хранилища LLM-провайдеров и конфига шлюза.
 try:
     llm.db().close()
@@ -1154,3 +1654,5 @@ except Exception:  # noqa: BLE001
 from mobile_api import router as mobile_router  # noqa: E402
 
 app.include_router(mobile_router)
+
+
