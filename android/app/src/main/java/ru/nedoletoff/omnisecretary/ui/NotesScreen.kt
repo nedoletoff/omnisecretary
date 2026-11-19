@@ -250,14 +250,12 @@ private fun VaultTab(api: Api) {
 
     LaunchedEffect(Unit) {
         loadConfig()
-        val cfg = config
-        if (c?.configured == true && cfg.ready) loadFiles()
     }
 
     // после загрузки конфига — подгружаем файлы, если готово
     LaunchedEffect(config?.configured, config?.ready) {
         val cfg = config
-        if (c?.configured == true && cfg.ready && files.isEmpty() && results.isEmpty() && !browsing) {
+        if (cfg?.configured == true && cfg.ready && files.isEmpty() && results.isEmpty() && !browsing) {
             loadFiles()
         }
     }
