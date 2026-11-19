@@ -1,14 +1,30 @@
 # Эксплуатация
 
-Ежедневные операции, бэкапы, переезд на внешний диск, мониторинг.
-
-## Ежедневно
+## Запуск и управление
 
 ```bash
-make ps          # все ли контейнеры живы
-make smoke       # 33 проверки
-make logs        # логи всех сервисов (Ctrl+C)
+make up            # поднять стек
+make down          # остановить
+make restart       # перезапуск
+make ps            # статус контейнеров
+make logs          # логи
+make smoke         # проверка здоровья (в т.ч. API, сервисы)
 ```
+
+Профили: `telegram`, `proactive`, `voice`, `voice-piper`, `ntfy`, `mcp` (по
+конфигурации). Примеры: `make tg-up`, `make proactive-up`, `make voice-up`.
+
+Rootless Docker: команды выполняются без `sudo`, контекст `rootless`.
+
+## Обновление
+
+```bash
+make update        # пересборка/обновление по зафиксированным тегам и скриптам
+```
+
+Образы фиксированы в `docker-compose.yml`. Обновление тегов — отдельный
+коммит после проверки. После обновления: `make smoke`, при необходимости
+`make init-webui` / `make mcp-init`.
 
 ## Бэкапы
 
@@ -16,166 +32,80 @@ make logs        # логи всех сервисов (Ctrl+C)
 make backup
 ```
 
-Создаёт в `${DATA_ROOT}/backups/<дата>/`:
+Создаёт дамп PostgreSQL, снапшот Qdrant и метаданные в `${DATA_ROOT}/backups`
+(права ограничены). Рекомендуется регулярный запуск (cron) и хранение копий
+отдельно от Pi.
 
-| Файл | Что |
-|---|---|
-| `postgres.sql.gz` | дамп обеих БД (openwebui + vikunja) |
-| `qdrant.snapshot` | снапшот коллекций Qdrant |
-| `openwebui/` | `webui.db`, `config.json`, загруженные файлы |
-| `vault.bundle` | git-bundle Obsidian-вольта (если подключён) |
-| `SHA256SUMS` | контрольные суммы |
+Восстановление — по скриптам/инструкциям для конкретных компонентов; перед
+восстановлением остановить зависимые сервисы.
 
-`.env` в бэкап не попадает: секреты храните отдельно (менеджер паролей).
-Ротация: хранится 7 последних каталогов.
+## Сертификаты TLS
 
-### Восстановление
+- Сертификаты: Let's Encrypt, webroot/certbot.
+- Продление: `make renew-certs` (cron настроен, лог в `${DATA_ROOT}/logs`).
+- При rootless копии сертификатов синхронизируются в доступное для nginx
+  расположение (`scripts/sync-certs.sh`).
 
-```bash
-# 1. Остановить сервисы, которые пишут в БД
-docker compose stop open-webui vikunja
+Проверка: `curl -I https://nedoletoff.sknt.ru`, срок — `openssl` или certbot.
 
-# 2. Postgres
-gunzip -c backups/<дата>/postgres.sql.gz | \
-  docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+## Данные и перенос на диск
 
-# 3. Qdrant: скопировать снапшот и восстановить через API
-docker compose start qdrant
-curl -X POST "http://127.0.0.1:6333/collections/<имя>/snapshots/upload?priority=snapshot" \
-  -F "snapshot=@backups/<дата>/qdrant.snapshot"
+- `DATA_ROOT` (по умолчанию `/srv/omnisecretary`) содержит тома, секреты,
+  бэкапы, вольты, логи. Для переноса на внешний диск:
+  1. остановить стек, сделать бэкап;
+  2. перенести данные, обновить `DATA_ROOT`/маунты;
+  3. при необходимости перенастроить Docker data-root;
+  4. поднять стек, `make smoke`.
+- Вольты пользователей: `${DATA_ROOT}/vaults/<user_id>` и индексы — включать
+  в резервное копирование.
 
-# 4. Вольт
-git clone backups/<дата>/vault.bundle /srv/omnisecretary/vault
+## Персональные Obsidian-вольты
 
-# 5. Поднять всё
-docker compose up -d && make smoke
-```
+- Настройка/синхронизация — пользователем через приложение (`/api/m/vault/*`)
+  или API портала.
+- Серверный вольт владельца: `/vault/status`, `/vault/sync` (Basic Auth),
+  логи `omni-vault-manager`.
+- При ошибках push — проверить токен, права репозитория, доступность GitHub,
+  статус синхронизации.
 
-## Переезд на внешний диск
+## Android-приложение
 
-Сейчас `${DATA_ROOT}=/srv/omnisecretary` (SD-карта). Когда появится
-внешний SSD/HDD:
+- Релизы: [GitHub Releases](https://github.com/nedoletoff/omnisecretary/releases),
+  тег `android-v*`. Сборка — GitHub Actions.
+- Обновление сервера может требовать совместимого клиента; при изменении
+  `/api/m/*` — выпуск новой версии приложения.
+- CI: при падении сборки — смотреть лог шага «Сборка debug APK»; для релиза
+  нужны `permissions: contents: write` и (для подписи) секреты `RELEASE_*`.
 
-```bash
-# 1. Разметить и смонтировать диск (вручную, осознанно)
-sudo mkdir -p /mnt/data
-sudo mount /dev/sdX1 /mnt/data
-# прописать в /etc/fstab по UUID (blkid), затем проверить: sudo mount -a
+## VPN и исходящие соединения
 
-# 2. Остановить стек
-cd /opt/omnisecretary && make down
-
-# 3. Перенести данные (rsync сохраняет права и владельцев)
-sudo rsync -aHAX --info=progress2 /srv/omnisecretary/ /mnt/data/omnisecretary/
-
-# 4. Поменять путь в .env
-#    DATA_ROOT=/mnt/data/omnisecretary
-#    (DOCKER_ROOT уже указывает на /mnt/data/docker — см. bootstrap)
-
-# 5. Поднять и проверить
-make up && make smoke
-```
-
-После переезда старый каталог не удаляйте, пока не пройдёт smoke и не
-убедитесь, что чаты и заметки на месте.
+- Конфиг: `${DATA_ROOT}/vpn/config.json`, управление — `scripts/vpn-config.py`,
+  `make vpn-*`. Проверка: `make vpn-test`.
+- Через VPN: telegram-bot, proactive, llm-gateway (по настройке). Локальные
+  адреса — в `NO_PROXY`.
 
 ## Мониторинг
 
-`scripts/health-alert.sh` прогоняет smoke-тест и при ошибке пишет в Telegram.
+- `make ps`, `make smoke`, логи контейнеров.
+- Панель владельца: `/portal/admin/status` (температура, память, диски,
+  контейнеры, сертификат, бэкап, VPN/UFW).
+- Telegram-бот: логи `omni-telegram-bot`; при проблемах — сеть/VPN, токен.
 
-Пример systemd-таймера (устанавливать вручную, с подтверждением):
+## Типовые проблемы
 
-```ini
-# /etc/systemd/system/omnisecretary-health.service
-[Unit]
-Description=OmniSecretary health check
-
-[Service]
-Type=oneshot
-User=nedoletoff
-WorkingDirectory=/opt/omnisecretary
-ExecStart=/opt/omnisecretary/scripts/health-alert.sh
-```
-
-```ini
-# /etc/systemd/system/omnisecretary-health.timer
-[Unit]
-Description=OmniSecretary health check every 15 minutes
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=15min
-
-[Install]
-WantedBy=timers.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now omnisecretary-health.timer
-```
-
-Лог: `${DATA_ROOT}/logs/health-alert.log`.
-
-## Обновление
-
-```bash
-make update        # git pull + пересборка + smoke
-```
-
-Версии образов фиксированы в `docker-compose.yml`. Обновление версии —
-отдельный коммит:
-
-1. Проверить `linux/arm64` в манифесте нового тега:
-   `docker manifest inspect <образ>:<тег> | grep arm64`.
-2. Поменять тег, `make pull && make up`.
-3. `make smoke`, прогнать чат/инструменты, затем коммит.
-
-## Сертификаты
-
-```bash
-make renew-certs       # продлить и перезагрузить nginx
-```
-
-Сертификат `nedoletoff.sknt.ru` живёт в `/etc/letsencrypt/live/...` (смонтирован
-в nginx read-only). Автопродление — cron (установлен в
-`/etc/cron.d/omnisecretary-renew`, лог `/srv/omnisecretary/logs/renew-certs.log`):
-
-```cron
-17 3 * * * /opt/omnisecretary/scripts/renew-certs.sh >> /var/log/omni-certs.log 2>&1
-```
-
-## Логи и износ SD
-
-- Docker: json-file, 10 МБ × 3 на контейнер (`logging` в compose).
-- Приложение: `${DATA_ROOT}/logs`.
-- Перенесите Docker data-root и `${DATA_ROOT}` на SSD — это главный способ
-  продлить жизнь карте памяти.
-- `sudo journalctl --vacuum-size=200M` раз в месяц (вручную).
-
-## Напоминания в Telegram
-
-В боте (после запуска профиля `telegram`):
-
-```
-/remind 20:30 позвонить маме
-/remind +15m проверить духовку
-/remind 12.11 09:00 встреча с врачом
-/reminders
-/forget 3
-```
-
-Напоминания хранятся в `bot.db` (SQLite, права 600), отправляются потоком
-раз в 20 секунд. Если бот выключен в момент срока — напоминание уйдёт при
-следующем запуске (просроченные не отбрасываются).
-
-## Что делать, если
-
-| Симптом | Действие |
+| Симптом | Проверка |
 |---|---|
-| `502` от nginx | `make ps` — жив ли `open-webui`; `make logs` |
-| чат не отвечает | проверить ключ провайдера в `.env`, `make restart` |
-| MCP-инструмент «unknown tool» | `make mcp-logs`, пересобрать `make mcp-build` |
-| вольт не синхронизируется | `http://<pi>/vault/` → «Синхронизировать», смотреть `make vault-logs` |
-| мало памяти | `docker stats --no-stream`; отключить `voice`/`tts` |
-| не приходит брифинг | `make briefing` — текст собирается? Проверить токен и `make proactive-logs` |
+| Контейнер unhealthy | `docker logs <name>`, лимиты памяти, зависимости |
+| 502/недоступен домен | nginx, DNS, проброс портов, `make smoke` |
+| Нет ответов от LLM | ключи/баланс провайдера, `llm-gateway`, сеть/VPN |
+| Не приходит в Telegram | доступ к `api.telegram.org`, VPN, токен, allowlist/код |
+| Вольт не синхронизируется | PAT, права repo, статус `/api/m/vault/config` или `/vault/status` |
+| Ошибка прав доступа к вольту | правила папок (персональный вольт), настроенный путь |
+
+## Безопасное обслуживание
+
+- Секреты не копировать в публичные места. Перед публикацией логов —
+  удалить токены/пароли.
+- Изменения на хосте (пакеты, systemd, сеть, fstab) — с пониманием последствий
+  и бэкапом.
+- См. [security.md](security.md), [AGENTS.md](AGENTS.md).
