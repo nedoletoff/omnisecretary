@@ -72,6 +72,11 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             org.json.JSONArray(pendingPrefs.getString("notes", "[]")).length()
         }.getOrDefault(0))
     }
+    var pendingReminders by remember {
+        mutableStateOf(runCatching {
+            org.json.JSONArray(pendingPrefs.getString("reminders", "[]")).length()
+        }.getOrDefault(0))
+    }
     fun enqueuePendingNote(title: String, text: String, folder: String = "AI/Inbox") {
         val arr = runCatching { org.json.JSONArray(pendingPrefs.getString("notes", "[]")) }
             .getOrDefault(org.json.JSONArray())
@@ -97,6 +102,30 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         pendingNotes = remaining.length()
         return sent
     }
+    fun enqueuePendingReminder(text: String, dueAtIso: String, telegram: Boolean) {
+        val arr = runCatching { org.json.JSONArray(pendingPrefs.getString("reminders", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        arr.put(org.json.JSONObject().put("text", text).put("due_at", dueAtIso).put("telegram", telegram))
+        pendingPrefs.edit().putString("reminders", arr.toString()).apply()
+        pendingReminders = arr.length()
+    }
+    suspend fun flushPendingReminders(): Int {
+        val arr = runCatching { org.json.JSONArray(pendingPrefs.getString("reminders", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        if (arr.length() == 0) return 0
+        val remaining = org.json.JSONArray()
+        var sent = 0
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val ok = runCatching {
+                api.reminder(item.optString("text"), item.optString("due_at"), item.optBoolean("telegram", false))
+            }.isSuccess
+            if (ok) sent++ else remaining.put(item)
+        }
+        pendingPrefs.edit().putString("reminders", arr.toString()).apply()
+        pendingReminders = remaining.length()
+        return sent
+    }
 
     suspend fun load(showSpinner: Boolean = true) {
         if (showSpinner) busy = true
@@ -104,9 +133,15 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         try {
             data = api.today()
             reminders = runCatching { api.reminders() }.getOrDefault(emptyList())
-            if (pendingNotes > 0) {
-                val sent = runCatching { flushPendingNotes() }.getOrDefault(0)
-                if (sent > 0) notice = "Отправлено отложенных заметок: $sent"
+            var sentNotes = 0
+            var sentReminders = 0
+            if (pendingNotes > 0) sentNotes = runCatching { flushPendingNotes() }.getOrDefault(0)
+            if (pendingReminders > 0) sentReminders = runCatching { flushPendingReminders() }.getOrDefault(0)
+            if (sentNotes > 0 || sentReminders > 0) {
+                notice = buildList {
+                    if (sentNotes > 0) add("заметок: $sentNotes")
+                    if (sentReminders > 0) add("напоминаний: $sentReminders")
+                }.joinToString(", ", prefix = "Отправлено отложенных — ")
             }
         } catch (failure: Exception) {
             error = failure.message ?: "Не удалось загрузить сводку"
@@ -147,14 +182,21 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         if (notice.isNotBlank()) {
             Text(notice, color = GruvboxAqua, style = MaterialTheme.typography.bodySmall)
         }
-        if (pendingNotes > 0) {
+        if (pendingNotes > 0 || pendingReminders > 0) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("В очереди заметок: $pendingNotes", color = GruvboxOrange,
+                val parts = buildList {
+                    if (pendingNotes > 0) add("заметок: $pendingNotes")
+                    if (pendingReminders > 0) add("напоминаний: $pendingReminders")
+                }.joinToString(", ")
+                Text("В очереди — $parts", color = GruvboxOrange,
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 TextButton(onClick = {
                     scope.launch {
-                        val sent = runCatching { flushPendingNotes() }.getOrDefault(0)
-                        notice = if (sent > 0) "Отправлено: $sent" else "Не удалось отправить, попробуйте позже"
+                        val sentN = runCatching { flushPendingNotes() }.getOrDefault(0)
+                        val sentR = runCatching { flushPendingReminders() }.getOrDefault(0)
+                        val total = sentN + sentR
+                        notice = if (total > 0) "Отправлено: $total" else "Не удалось отправить, попробуйте позже"
+                        if (total > 0) load(showSpinner = false)
                     }
                 }) { Text("Отправить") }
             }
@@ -297,17 +339,24 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             context = context,
             onDismiss = { dialog = DialogKind.NONE },
             onSave = { text, at, telegram ->
-                runAction {
+                scope.launch {
                     val prefs = context.getSharedPreferences("omni_settings", Context.MODE_PRIVATE)
                     val appNotify = prefs.getBoolean("notify_app", true)
                     if (appNotify) {
                         Reminders.schedule(context, text,
                             at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
                     }
-                    api.reminder(text, at.atZone(ZoneId.systemDefault()).toOffsetDateTime()
-                        .toString(), telegram)
-                    if (telegram) "Напоминание создано (приложение + Telegram)"
-                    else "Напоминание создано в приложении"
+                    val dueIso = at.atZone(ZoneId.systemDefault()).toOffsetDateTime().toString()
+                    val apiOk = runCatching { api.reminder(text, dueIso, telegram) }.isSuccess
+                    if (apiOk) {
+                        notice = if (telegram) "Напоминание создано (приложение + Telegram)"
+                            else "Напоминание создано в приложении"
+                    } else {
+                        enqueuePendingReminder(text, dueIso, telegram)
+                        notice = "Напоминание сохранено локально, синхронизация в очереди (${pendingReminders})"
+                    }
+                    dialog = DialogKind.NONE
+                    load(showSpinner = false)
                 }
             })
         DialogKind.EVENT -> EventDialog(
@@ -344,9 +393,9 @@ fun TodayScreen(api: Api, reloadKey: Int) {
     editingEvent?.let { event ->
         EventEditDialog(event = event,
             onDismiss = { editingEvent = null },
-            onSave = { title ->
+            onSave = { title, description ->
                 runAction {
-                    api.updateEvent(event.id, title = title)
+                    api.updateEvent(event.id, title = title, description = description)
                     editingEvent = null
                     "Событие обновлено"
                 }
@@ -557,9 +606,10 @@ private fun TaskEditDialog(
 private fun EventEditDialog(
     event: ru.nedoletoff.omnisecretary.data.TodayEvent,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
+    onSave: (String, String) -> Unit,
 ) {
     var title by remember { mutableStateOf(event.title) }
+    var description by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Редактировать событие") },
@@ -567,12 +617,14 @@ private fun EventEditDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(title, { title = it }, label = { Text("Название") },
                     singleLine = true)
-                Text("Изменение времени пока недоступно (можно удалить и создать заново).",
+                OutlinedTextField(description, { description = it },
+                    label = { Text("Описание (необязательно)") }, minLines = 2)
+                Text("Время: ${event.time.ifBlank { "не указано" }}. Для изменения времени удалите и создайте событие заново.",
                     color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
-            TextButton(onClick = { if (title.isNotBlank()) onSave(title.trim()) },
+            TextButton(onClick = { if (title.isNotBlank()) onSave(title.trim(), description.trim()) },
                 enabled = title.isNotBlank()) { Text("Сохранить") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
