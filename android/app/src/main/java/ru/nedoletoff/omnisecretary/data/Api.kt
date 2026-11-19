@@ -14,7 +14,13 @@ import java.util.concurrent.TimeUnit
 data class ChatSummary(val id: String, val title: String, val updated: Long)
 data class ChatMessage(val role: String, val content: String, val timestamp: Long)
 data class ModelInfo(val id: String, val name: String, val description: String)
-data class TodayEvent(val id: String, val time: String, val title: String)
+data class TodayEvent(
+    val id: String,
+    val time: String,
+    val title: String,
+    val description: String = "",
+    val allDay: Boolean = false,
+)
 data class TodayTask(val id: Long, val title: String, val due: String)
 data class TodayNote(val id: String, val title: String)
 
@@ -303,6 +309,8 @@ class Api(private val server: String, private val token: String = "") {
                     id = item.optString("id"),
                     time = item.optString("time"),
                     title = item.optString("title"),
+                    description = item.optString("description"),
+                    allDay = item.optBoolean("all_day", false),
                 ))
             }
         }
@@ -413,11 +421,17 @@ class Api(private val server: String, private val token: String = "") {
             call("/api/m/event/$id/update", "POST", body)
         }
 
-    suspend fun events(days: Int = 7): List<TodayEvent> = withContext(Dispatchers.IO) {
+    suspend fun events(days: Int = 31): List<TodayEvent> = withContext(Dispatchers.IO) {
         val array = call("/api/m/events?days=$days").optJSONArray("events") ?: JSONArray()
         (0 until array.length()).mapNotNull { i ->
             val item = array.optJSONObject(i) ?: return@mapNotNull null
-            TodayEvent(item.optString("id"), item.optString("time"), item.optString("title"))
+            TodayEvent(
+                id = item.optString("id"),
+                time = item.optString("time"),
+                title = item.optString("title"),
+                description = item.optString("description"),
+                allDay = item.optBoolean("all_day", false),
+            )
         }
     }
 
