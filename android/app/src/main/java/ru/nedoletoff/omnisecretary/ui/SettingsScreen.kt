@@ -27,7 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import org.json.JSONObject
 import ru.nedoletoff.omnisecretary.data.Api
+import ru.nedoletoff.omnisecretary.data.ModelInfo
 import ru.nedoletoff.omnisecretary.data.Session
 
 @Composable
@@ -36,7 +38,8 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
     val prefs = remember {
         context.getSharedPreferences("omni_settings", android.content.Context.MODE_PRIVATE)
     }
-    var models by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var models by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
+    var usage by remember { mutableStateOf<JSONObject?>(null) }
     var status by remember { mutableStateOf("") }
     var statusError by remember { mutableStateOf("") }
     var appNotifications by remember {
@@ -58,7 +61,9 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
     val c = OmniPalette.colors
 
     LaunchedEffect(Unit) {
-        runCatching { api.models() }.onSuccess { models = it }
+        runCatching { api.modelDetails() }.onSuccess { models = it }
+            .onFailure { runCatching { api.models() }.onSuccess { list -> models = list.map { ModelInfo(it.first, it.second, "") } } }
+        runCatching { api.usage() }.onSuccess { if (it.length() > 0) usage = it }
         runCatching { api.status() }
             .onSuccess { body ->
                 val temp = body.optJSONObject("temperature") ?: body.optJSONObject("temp")
@@ -94,6 +99,7 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("Настройки", style = MaterialTheme.typography.headlineSmall, color = c.accent)
+
         Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Аккаунт", color = c.accent)
@@ -106,31 +112,70 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text("Модель по умолчанию", color = c.accent)
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Модели", color = c.accent)
+                Text("Выберите модель по умолчанию. Описание помогает понять, для чего она подходит.",
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 if (models.isEmpty()) {
                     Text("Список недоступен", color = c.textSecondary,
                         style = MaterialTheme.typography.bodySmall)
                 } else {
-                    models.forEach { (id, name) ->
-                        Row(
+                    models.forEach { model ->
+                        Column(
                             Modifier
                                 .fillMaxWidth()
-                                .clickable { Session.setModel(id) }
+                                .clickable { Session.setModel(model.id) }
                                 .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                if (id == Session.model) "● " else "○ ",
-                                color = if (id == Session.model) c.success else c.textSecondary,
-                            )
-                            Column {
-                                Text(name, color = c.text)
-                                if (name != id) Text(id, color = c.textSecondary,
-                                    style = MaterialTheme.typography.labelSmall)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    if (model.id == Session.model) "● " else "○ ",
+                                    color = if (model.id == Session.model) c.success else c.textSecondary,
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(model.name, color = c.text)
+                                    if (model.name != model.id) {
+                                        Text(model.id, color = c.textSecondary,
+                                            style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                            if (model.description.isNotBlank()) {
+                                Text(model.description, color = c.textSecondary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(start = 18.dp, top = 2.dp))
                             }
                         }
+                        HorizontalDivider(color = c.surfaceAlt)
                     }
+                }
+            }
+        }
+
+        usage?.optJSONObject("totals")?.let { totals ->
+            Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Использование и статистика", color = c.accent)
+                    val lifetime = totals.optLong("lifetime_tokens", 0)
+                    val input = totals.optLong("input_tokens", 0)
+                    val output = totals.optLong("output_tokens", 0)
+                    val chats = totals.optInt("total_chats", 0)
+                    val messages = totals.optInt("messages", 0)
+                    val modelsUsed = totals.optInt("models_used", 0)
+                    val activeDays = totals.optInt("active_days", 0)
+                    if (lifetime > 0 || messages > 0) {
+                        if (lifetime > 0) Text("Токены всего: $lifetime (ввод: $input, ответ: $output)", color = c.text,
+                            style = MaterialTheme.typography.bodySmall)
+                        Text("Чатов: $chats · Сообщений: $messages", color = c.text,
+                            style = MaterialTheme.typography.bodySmall)
+                        Text("Моделей использовано: $modelsUsed · Активных дней: $activeDays", color = c.textSecondary,
+                            style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text("Статистика появится после первых диалогов.", color = c.textSecondary,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("Точные расходы зависят от модели и провайдера (см. биллинг провайдера).",
+                        color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -166,7 +211,7 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("Блокировка биометрией", color = c.text)
-                        Text("Запрашивать отпечаток/лицо при входе в приложение",
+                        Text("Запрашивать отпечаток/лицо при входе и при возврате в приложение",
                             color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                     }
                     Switch(checked = biometric, onCheckedChange = {
@@ -202,7 +247,7 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
                 OutlinedTextField(ntfyTopic, { ntfyTopic = it; prefs.edit().putString("ntfy_topic", it).apply() },
                     label = { Text("ntfy topic (пусто — не использовать)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())
-                Text("Для собственного ntfy укажите адрес сервера и topic. Push-подписка — через приложение ntfy/браузер на устройстве.",
+                Text("Для собственного ntfy укажите адрес сервера и topic.",
                     color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
             }
         }

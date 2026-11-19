@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 
 data class ChatSummary(val id: String, val title: String, val updated: Long)
 data class ChatMessage(val role: String, val content: String, val timestamp: Long)
+data class ModelInfo(val id: String, val name: String, val description: String)
 data class TodayEvent(val id: String, val time: String, val title: String)
 data class TodayTask(val id: Long, val title: String, val due: String)
 data class TodayNote(val id: String, val title: String)
@@ -91,6 +92,19 @@ class Api(private val server: String, private val token: String = "") {
         }
     }
 
+    private fun callRaw(path: String, method: String = "GET",
+                        body: JSONObject? = null): String {
+        client.newCall(request(path, method, body).build()).execute().use { response ->
+            val text = response.body?.string().orEmpty()
+            if (!response.isSuccessful) {
+                val detail = runCatching { JSONObject(text).optString("detail") }
+                    .getOrDefault("")
+                error(if (detail.isNotBlank()) detail else "HTTP ${response.code}")
+            }
+            return text
+        }
+    }
+
     suspend fun signIn(login: String, password: String): JSONObject =
         withContext(Dispatchers.IO) {
             call("/api/v1/auths/signin", "POST",
@@ -98,7 +112,11 @@ class Api(private val server: String, private val token: String = "") {
         }
 
     suspend fun chats(): List<ChatSummary> = withContext(Dispatchers.IO) {
-        val array = call("/api/v1/chats/?page=1").optJSONArray("data") ?: JSONArray()
+        val raw = callRaw("/api/v1/chats/?page=1")
+        val array = runCatching { JSONArray(raw) }.getOrElse {
+            runCatching { JSONObject(raw).optJSONArray("data") ?: JSONObject(raw).optJSONArray("chats") }
+                .getOrNull() ?: JSONArray()
+        }
         (0 until array.length()).mapNotNull { index ->
             val item = array.optJSONObject(index) ?: return@mapNotNull null
             ChatSummary(
@@ -146,8 +164,45 @@ class Api(private val server: String, private val token: String = "") {
         val array = call("/api/models").optJSONArray("data") ?: JSONArray()
         (0 until array.length()).mapNotNull { index ->
             val item = array.optJSONObject(index) ?: return@mapNotNull null
-            item.optString("id") to item.optString("name", item.optString("id"))
+            val id = item.optString("id")
+            val name = item.optString("name").ifBlank { id }
+            if (id.isBlank()) null else id to name
         }
+    }
+
+    /** Подробная информация о моделях для экрана настроек. */
+    suspend fun modelDetails(): List<ModelInfo> = withContext(Dispatchers.IO) {
+        val array = call("/api/models").optJSONArray("data") ?: JSONArray()
+        (0 until array.length()).mapNotNull { index ->
+            val item = array.optJSONObject(index) ?: return@mapNotNull null
+            val id = item.optString("id")
+            if (id.isBlank()) return@mapNotNull null
+            val name = item.optString("name").ifBlank { id }
+            val meta = item.optJSONObject("meta") ?: JSONObject()
+            val info = item.optJSONObject("info") ?: JSONObject()
+            val desc = meta.optString("description").ifBlank {
+                info.optString("description")
+            }.ifBlank { defaultModelDescription(id) }
+            ModelInfo(id = id, name = name, description = desc)
+        }
+    }
+
+    private fun defaultModelDescription(id: String): String = when {
+        id == "omni-auto" -> "Автовыбор: использует настроенную модель, при недоступности — бесплатная."
+        id == "omni-openrouter" -> "Через OpenRouter (платный ключ). Качество и скорость зависят от модели."
+        id == "omni-free" -> "Бесплатная модель для тестов. Возможны паузы и ограничения скорости."
+        id.startsWith("openai-fast") -> "Быстрая модель через настроенный OpenAI-совместимый API."
+        id.startsWith("openai-large") -> "Более мощная модель через API (медленнее, качественнее)."
+        id.contains("secretary", true) -> "Персональный секретарь: задачи, календарь, заметки, помощь с настройкой."
+        id.contains("coder", true) -> "Помощник по коду и техническим задачам."
+        id.contains("archivist", true) -> "Работа с заметками, поиском и Obsidian."
+        id.contains("private", true) -> "Приватный режим: без сохранения истории и обращений к памяти."
+        id.contains("omni", true) -> "Универсальный ассистент OmniSecretary."
+        else -> "Модель, доступная на сервере."
+    }
+
+    suspend fun usage(): JSONObject = withContext(Dispatchers.IO) {
+        runCatching { call("/api/v1/users/usage") }.getOrElse { JSONObject() }
     }
 
     /**

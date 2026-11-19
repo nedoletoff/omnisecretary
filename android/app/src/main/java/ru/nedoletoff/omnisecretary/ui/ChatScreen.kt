@@ -260,12 +260,16 @@ fun ChatScreen(
     }
 
     fun launchCamera() {
-        val dir = File(context.cacheDir, "camera").apply { mkdirs() }
-        val file = File(dir, "photo-${System.currentTimeMillis()}.jpg")
-        val uri = FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", file)
-        cameraUri = uri
-        takePicture.launch(uri)
+        try {
+            val dir = File(context.cacheDir, "camera").apply { mkdirs() }
+            val file = File(dir, "photo-${System.currentTimeMillis()}.jpg")
+            val uri = FileProvider.getUriForFile(
+                context, "${context.packageName}.fileprovider", file)
+            cameraUri = uri
+            takePicture.launch(uri)
+        } catch (e: Exception) {
+            notice = "Камера недоступна: ${e.message ?: "ошибка"}"
+        }
     }
 
     // Вложение, переданное через «Поделиться» из другого приложения.
@@ -427,7 +431,7 @@ fun ChatScreen(
         },
         containerColor = c.background,
         bottomBar = {
-            Column(Modifier.background(c.surface).padding(8.dp)) {
+            Column(Modifier.background(c.surface).imePadding().padding(8.dp)) {
                 if (notice.isNotBlank()) {
                     Text(notice, color = c.textSecondary,
                         style = MaterialTheme.typography.bodySmall,
@@ -477,8 +481,7 @@ fun ChatScreen(
                         onValueChange = { input = it },
                         modifier = Modifier
                             .weight(1f)
-                            .heightIn(min = 52.dp)
-                            .imePadding(),
+                            .heightIn(min = 52.dp),
                         placeholder = { Text("Спросите что-нибудь") },
                         maxLines = 4,
                     )
