@@ -39,9 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import ru.nedoletoff.omnisecretary.data.Api
-import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.data.TodayEvent
-import ru.nedoletoff.omnisecretary.ui.theme.OmniPalette
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -49,9 +47,8 @@ import java.time.format.DateTimeFormatter
 private val DATE_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
 @Composable
-fun CalendarScreen(session: Session) {
+fun CalendarScreen(api: Api) {
     val c = OmniPalette.colors
-    val api = remember(session.token, session.baseUrl) { Api(session) }
     val scope = rememberCoroutineScope()
 
     var month by remember { mutableStateOf(YearMonth.now()) }
@@ -80,7 +77,7 @@ fun CalendarScreen(session: Session) {
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(c.bg)
+            .background(c.background)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
