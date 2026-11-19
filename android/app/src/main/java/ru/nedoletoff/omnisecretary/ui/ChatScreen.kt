@@ -30,6 +30,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Stop
@@ -60,8 +61,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.ChatMessage
@@ -70,6 +75,8 @@ import ru.nedoletoff.omnisecretary.data.UploadedFile
 import ru.nedoletoff.omnisecretary.voice.Recorder
 import java.io.File
 import java.util.UUID
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 private fun playWav(context: Context, bytes: ByteArray, onDone: () -> Unit = {}) {
     if (bytes.isEmpty()) { onDone(); return }
@@ -119,6 +126,7 @@ fun ChatScreen(
     val attachments = remember { mutableStateListOf<UploadedFile>() }
     var uploading by remember { mutableStateOf(false) }
     var cameraUri by remember { mutableStateOf<Uri?>(null) }
+    var ocrBusy by remember { mutableStateOf(false) }
 
     var permissionGranted by remember { mutableStateOf(false) }
     fun startRecording() {
@@ -209,6 +217,38 @@ fun ChatScreen(
     val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val uri = cameraUri
         if (ok && uri != null) uploadAndAttach(uri, "image/jpeg")
+    }
+
+    suspend fun recognizeText(uri: Uri): String = withContext(Dispatchers.IO) {
+        val image = InputImage.fromFilePath(context, uri)
+        suspendCancellableCoroutine { cont ->
+            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+            recognizer.process(image)
+                .addOnSuccessListener { result -> if (cont.isActive) cont.resume(result.text) }
+                .addOnFailureListener { e -> if (cont.isActive) cont.resumeWithException(e) }
+                .addOnCompleteListener { runCatching { recognizer.close() } }
+        }
+    }
+
+    val pickForOcr = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            ocrBusy = true
+            notice = "Распознавание текста…"
+            try {
+                val text = recognizeText(uri)
+                if (text.isBlank()) {
+                    notice = "Текст на изображении не найден"
+                } else {
+                    input = if (input.isBlank()) text.trim() else input.trimEnd() + "\n\n" + text.trim()
+                    notice = "Текст распознан и добавлен в поле ввода"
+                }
+            } catch (e: Exception) {
+                notice = e.message ?: "Не удалось распознать текст"
+            } finally {
+                ocrBusy = false
+            }
+        }
     }
 
     fun launchCamera() {
@@ -396,9 +436,14 @@ fun ChatScreen(
                         Icon(Icons.Filled.AttachFile, contentDescription = "Вложить файл",
                             tint = GruvboxBlue)
                     }
-                    IconButton(onClick = { launchCamera() }, enabled = !uploading) {
+                    IconButton(onClick = { launchCamera() }, enabled = !uploading && !ocrBusy) {
                         Icon(Icons.Filled.CameraAlt, contentDescription = "Камера",
                             tint = GruvboxBlue)
+                    }
+                    IconButton(onClick = { pickForOcr.launch("image/*") }, enabled = !ocrBusy && !busy) {
+                        if (ocrBusy) CircularProgressIndicator(Modifier.size(18.dp))
+                        else Icon(Icons.Filled.DocumentScanner, contentDescription = "Распознать текст с фото",
+                            tint = GruvboxAqua)
                     }
                     OutlinedTextField(
                         value = input,
@@ -412,7 +457,7 @@ fun ChatScreen(
                     )
                     IconButton(
                         onClick = { send(input) },
-                        enabled = !busy && !uploading && (input.isNotBlank() || attachments.isNotEmpty()),
+                        enabled = !busy && !uploading && !ocrBusy && (input.isNotBlank() || attachments.isNotEmpty()),
                     ) {
                         if (busy) CircularProgressIndicator(Modifier.size(20.dp))
                         else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Отправить",
