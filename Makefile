@@ -1,7 +1,12 @@
 SHELL := /bin/bash
-COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env
 
-.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs mcp-build mcp-init mcp-logs vault-logs voice-up voice-piper voice-down voice-logs proactive-up proactive-down briefing briefing-send proactive-logs
+# Дополнительные профили compose (через пробел), например: voice proactive telegram ntfy
+# Пусто = только базовый стек (без telegram/voice/proactive/ntfy).
+COMPOSE_PROFILES ?= $(shell grep -E '^COMPOSE_PROFILES=' .env 2>/dev/null | cut -d= -f2- | tr ',' ' ')
+PROFILE_FLAGS := $(foreach p,$(strip $(COMPOSE_PROFILES)),--profile $(p))
+COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env $(PROFILE_FLAGS)
+
+.PHONY: help init up down restart ps logs smoke backup update reload pull shell-owui shell-pg shell-qdrant presets vikunja-admin init-webui tg-up tg-down tg-logs mcp-build mcp-init mcp-logs vault-logs voice-up voice-piper voice-down voice-logs proactive-up proactive-down briefing briefing-send proactive-logs portal-logs portal-up vpn-config vpn-up vpn-down vpn-logs vpn-traffic vpn-watch vpn-test tg-avatar renew-certs owner-creds harden
 
 help: ## Показать список команд
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -9,11 +14,12 @@ help: ## Показать список команд
 init: ## Первичная установка на Pi (идемпотентно)
 	./scripts/bootstrap-pi.sh
 
-up: vpn-config ## Запустить стек
+up: vpn-config ## Запустить стек (профили из COMPOSE_PROFILES в .env)
 	$(COMPOSE) up -d --remove-orphans
+	@echo "Профили: $(if $(strip $(COMPOSE_PROFILES)),$(strip $(COMPOSE_PROFILES)),только базовый стек)"
 
 down: ## Остановить стек (данные сохраняются)
-	$(COMPOSE) down
+	$(COMPOSE) down --remove-orphans
 
 restart: ## Перезапустить стек
 	$(COMPOSE) restart

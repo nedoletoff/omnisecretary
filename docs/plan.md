@@ -14,7 +14,11 @@
 - Пресеты (Secretary, Omni, Archivist, Coder, Private) и импорт.
 - Ограничение: CalDAV-синхронизация событий Open WebUI — см. ADR-016.
 
-## Этап 3 — Telegram (✅)
+## Этап 3 — Telegram (реализовано, сейчас опционально/выключен)
+
+- Бот и allowlist/код подтверждения реализованы; контейнер под профилем `telegram`.
+- По умолчанию не запускается (`COMPOSE_PROFILES` без `telegram`) — заменён Android-приложением.
+- Включение: `make tg-up` или добавить `telegram` в `COMPOSE_PROFILES`.
 - Бот (long polling, профиль compose), allowlist/код подтверждения,
   изоляция пользователей, команды, приватный режим.
 - Напоминания, утренний брифинг (proactive), личные локации.

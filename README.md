@@ -59,10 +59,11 @@ make smoke
 - Сервер: `https://nedoletoff.sknt.ru`, вход тем же аккаунтом.
 - Функции, личный Obsidian-вольт, сборка: [docs/android.md](docs/android.md).
 
-### Telegram
-- Бот: @nd_omnisecretarybot (при настроенном токене и доступе к API Telegram).
-- Вход по коду подтверждения (для не-владельцев), команды `/app`, `/weather`,
-  `/remind`, `/briefing` и др. — [docs/telegram.md](docs/telegram.md).
+### Telegram-бот (опционально, сейчас отключён)
+- **Не запускается по умолчанию** (`COMPOSE_PROFILES` без `telegram`) — заменён Android-приложением.
+- Код и конфигурация сохранены (профиль `telegram`). Включение: добавить `telegram` в `COMPOSE_PROFILES` в `.env` и `make up`, либо `make tg-up`.
+- Команды/доступ по коду при включении — [docs/telegram.md](docs/telegram.md).
+- Брифинг/напоминания в приложении работают через портал/API; доставка в Telegram требует профилей `telegram`/`proactive` и доступного Telegram API.
 
 ### Календарь и задачи
 - Календарь Open WebUI: в вебе и в приложении.

@@ -43,7 +43,7 @@
 | vault-manager | Веб-форма и синхронизация общего вольта владельца | `/srv/omnisecretary/vault`, индекс |
 | mcp-vault | MCP-инструменты вольта (общий контекст) | общий вольт/индекс |
 | mcp-files/github/vikunja/sandbox | Инструменты для ассистента | shared, workspace, токены |
-| telegram-bot | Telegram-интерфейс, напоминания, доступ по коду | `bot.db` |
+| telegram-bot *(профиль `telegram`, опционально, сейчас выключен)* | Telegram-интерфейс, доступ по коду; заменён приложением | `bot.db` |
 | proactive | Утренний брифинг, расписание | состояние в volumes |
 | stt / tts | Распознавание и синтез речи (OpenAI-совместимые) | модели в образах/кэше |
 | ntfy (опц.) | Self-hosted push | `VOLUMES_ROOT/ntfy` |
@@ -81,7 +81,7 @@ ${DATA_ROOT}/
 
 ## Потоки данных
 
-- **Чат (веб/Telegram/Android):** клиент → nginx → open-webui → LLM API;
+- **Чат (веб/Android, Telegram опционально):** клиент → nginx → open-webui → LLM API;
   история в PostgreSQL, память/эмбеддинги — Qdrant. Все клиенты видят одну
   базу в рамках аккаунта.
 - **Календарь/задачи:** Open WebUI API и Vikunja API (через портал `/api/m/*`
