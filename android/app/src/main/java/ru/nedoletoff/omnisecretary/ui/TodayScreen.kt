@@ -63,6 +63,7 @@ fun TodayScreen(api: Api, reloadKey: Int) {
     var notice by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(true) }
     var dialog by remember { mutableStateOf(DialogKind.NONE) }
+    var editingTask by remember { mutableStateOf<ru.nedoletoff.omnisecretary.data.TodayTask?>(null) }
 
     suspend fun load(showSpinner: Boolean = true) {
         if (showSpinner) busy = true
