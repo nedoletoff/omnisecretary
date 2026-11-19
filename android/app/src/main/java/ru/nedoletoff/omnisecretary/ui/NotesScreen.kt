@@ -173,7 +173,7 @@ private fun NoteEditor(
 ) {
     val c = OmniPalette.colors
     var t by remember { mutableStateOf(title) }
-    var c by remember { mutableStateOf(content) }
+    var body by remember { mutableStateOf(content) }
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, "Назад", tint = c.text) }
@@ -183,11 +183,11 @@ private fun NoteEditor(
             if (onDelete != null) {
                 IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, "Удалить", tint = c.danger) }
             }
-            IconButton(onClick = { onSave(t, c) }) { Icon(Icons.Filled.Save, "Сохранить", tint = c.success) }
+            IconButton(onClick = { onSave(t, body) }) { Icon(Icons.Filled.Save, "Сохранить", tint = c.success) }
         }
         OutlinedTextField(t, { t = it }, label = { Text("Заголовок") },
             modifier = Modifier.fillMaxWidth(), singleLine = true)
-        OutlinedTextField(c, { c = it }, label = { Text("Текст") },
+        OutlinedTextField(body, { body = it }, label = { Text("Текст") },
             modifier = Modifier.fillMaxWidth().weight(1f))
     }
 }

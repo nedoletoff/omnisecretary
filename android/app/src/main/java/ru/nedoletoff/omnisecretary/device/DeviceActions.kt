@@ -94,10 +94,37 @@ object DeviceActions {
         return launch(context, intent, "Часы")
     }
 
+    private val knownApps = mapOf(
+        "youtube" to "com.google.android.youtube", "ютуб" to "com.google.android.youtube",
+        "карты" to "com.google.android.apps.maps", "maps" to "com.google.android.apps.maps",
+        "гугл карты" to "com.google.android.apps.maps",
+        "браузер" to "com.android.chrome", "chrome" to "com.android.chrome", "хром" to "com.android.chrome",
+        "телеграм" to "org.telegram.messenger", "telegram" to "org.telegram.messenger",
+        "камер" to "com.android.camera", "camera" to "com.android.camera",
+        "настройки" to "com.android.settings", "settings" to "com.android.settings",
+        "календарь" to "com.google.android.calendar", "calendar" to "com.google.android.calendar",
+        "часы" to "com.google.android.deskclock", "clock" to "com.google.android.deskclock",
+        "почта" to "com.google.android.gm", "gmail" to "com.google.android.gm",
+        "музык" to "com.google.android.apps.youtube.music", "music" to "com.google.android.apps.youtube.music",
+        "spotify" to "com.spotify.music", "спотифай" to "com.spotify.music",
+        "фото" to "com.google.android.apps.photos", "photos" to "com.google.android.apps.photos",
+        "заметки" to "com.google.android.keep", "keep" to "com.google.android.keep",
+        "контакты" to "com.google.android.contacts", "contacts" to "com.google.android.contacts",
+        "телефон" to "com.google.android.dialer", "phone" to "com.google.android.dialer",
+        "сообщения" to "com.google.android.apps.messaging", "sms" to "com.google.android.apps.messaging",
+    )
+
     fun openApp(context: Context, query: String): Result {
         val q = query.trim().lowercase(Locale.getDefault())
         if (q.isBlank()) return Result(false, "Укажите приложение")
+        // точное совпадение или по ключу-алиасу
         knownApps[q]?.let { pkg ->
+            context.packageManager.getLaunchIntentForPackage(pkg)?.let {
+                return launch(context, it, "Открываю $query")
+            }
+        }
+        // частичное совпадение по алиасам
+        knownApps.entries.firstOrNull { q.contains(it.key) || it.key.contains(q) }?.let { (_, pkg) ->
             context.packageManager.getLaunchIntentForPackage(pkg)?.let {
                 return launch(context, it, "Открываю $query")
             }

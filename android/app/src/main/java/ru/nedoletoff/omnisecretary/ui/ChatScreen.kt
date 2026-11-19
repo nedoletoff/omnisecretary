@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -75,7 +76,6 @@ import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.ChatMessage
 import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.data.UploadedFile
-import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.device.DeviceActions
 import ru.nedoletoff.omnisecretary.voice.Recorder
 import java.io.File
