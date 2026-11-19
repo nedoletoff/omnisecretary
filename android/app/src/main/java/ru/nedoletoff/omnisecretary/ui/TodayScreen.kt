@@ -64,6 +64,7 @@ fun TodayScreen(api: Api, reloadKey: Int) {
     var busy by remember { mutableStateOf(true) }
     var dialog by remember { mutableStateOf(DialogKind.NONE) }
     var editingTask by remember { mutableStateOf<ru.nedoletoff.omnisecretary.data.TodayTask?>(null) }
+    var editingEvent by remember { mutableStateOf<ru.nedoletoff.omnisecretary.data.TodayEvent?>(null) }
 
     suspend fun load(showSpinner: Boolean = true) {
         if (showSpinner) busy = true
@@ -166,12 +167,14 @@ fun TodayScreen(api: Api, reloadKey: Int) {
                     Text("Пусто", color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
                 } else {
                     today.events.forEach { event ->
-                        EventRow(event) {
-                            runAction {
-                                api.deleteEvent(event.id)
-                                "Событие удалено"
-                            }
-                        }
+                        EventRow(event,
+                            onDelete = {
+                                runAction {
+                                    api.deleteEvent(event.id)
+                                    "Событие удалено"
+                                }
+                            },
+                            onEdit = { editingEvent = event })
                     }
                 }
             }
@@ -280,6 +283,18 @@ fun TodayScreen(api: Api, reloadKey: Int) {
                 }
             })
     }
+
+    editingEvent?.let { event ->
+        EventEditDialog(event = event,
+            onDismiss = { editingEvent = null },
+            onSave = { title ->
+                runAction {
+                    api.updateEvent(event.id, title = title)
+                    editingEvent = null
+                    "Событие обновлено"
+                }
+            })
+    }
 }
 
 @Composable
@@ -298,12 +313,14 @@ private fun Section(title: String, lines: List<String>) {
 }
 
 @Composable
-private fun EventRow(event: ru.nedoletoff.omnisecretary.data.TodayEvent, onDelete: () -> Unit) {
+private fun EventRow(event: ru.nedoletoff.omnisecretary.data.TodayEvent,
+                     onDelete: () -> Unit, onEdit: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(if (event.time.isBlank()) event.title else "${event.time}  ${event.title}",
                 color = GruvboxFg)
         }
+        TextButton(onClick = onEdit) { Text("✎", color = GruvboxBlue) }
         TextButton(onClick = onDelete) { Text("×", color = GruvboxRed) }
     }
 }
