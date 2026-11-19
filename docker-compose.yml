@@ -74,6 +74,8 @@ services:
       OPENROUTER_BASE: ${OPENROUTER_BASE:-https://openrouter.ai/api/v1}
       FALLBACK_BASE: ${FALLBACK_BASE:-https://text.pollinations.ai/openai}
       FALLBACK_MODEL: ${FALLBACK_MODEL:-openai-fast}
+      LLM_CONFIG_PATH: /data/llm-config.json
+      FORWARD_USER_INFO_HEADER_JWT_SECRET: ${LLM_USER_JWT_SECRET}
       PUBLIC_URL: ${PUBLIC_URL:-}
       # OpenRouter отвечает «Access denied by security policy» с российского
       # IP, поэтому шлюз ходит через VPN. Локальные адреса — напрямую.
@@ -82,6 +84,7 @@ services:
       NO_PROXY: localhost,127.0.0.1,llm-gateway
     volumes:
       - ./llm:/app/llm:ro
+      - ${DATA_ROOT}/portal:/data:ro
     networks:
       - backend
     ports:
@@ -153,6 +156,9 @@ services:
       DEFAULT_USER_ROLE: "user"
       # API-ключи нужны скриптам (импорт пресетов, бэкапы).
       ENABLE_API_KEYS: ${ENABLE_API_KEYS:-true}
+      # Провайдер пользователя определяется шлюзом по подписанному JWT.
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true"
+      FORWARD_USER_INFO_HEADER_JWT_SECRET: ${LLM_USER_JWT_SECRET}
       # MCP-инструменты как внешние сервисы (mcp-* в этом же compose).
       ENABLE_TOOL_SERVERS: "true"
       # Голос: локальные Vosk STT и Silero TTS (профиль voice).

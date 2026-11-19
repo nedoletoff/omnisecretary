@@ -21,6 +21,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
+import providers as llm
+import vaults as pvaults
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -251,24 +253,19 @@ def page(title: str, body: str, message: str = "", error: bool = False,
         --gray:#928374; --yellow:#fabd2f; --orange:#fe8019; --green:#b8bb26;
         --red:#fb4934; --blue:#83a598; }}
 * {{ box-sizing:border-box; }}
-html,body {{ min-height:100%; }}
-body {{ margin:0; color:var(--fg); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;
+html,body {{ min-height:100vh; }}
+body {{ margin:0; min-height:100vh; color:var(--fg); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;
   background:
     radial-gradient(900px 500px at 12% 12%, rgba(250,189,47,.13), transparent 60%),
     radial-gradient(700px 500px at 88% 88%, rgba(254,128,25,.10), transparent 60%),
     linear-gradient(145deg,#1d2021 0%,#282828 45%,#32302f 100%);
   display:flex; align-items:center; justify-content:center; padding:32px 20px; }}
-.shell {{ width:100%; max-width:1000px; display:grid;
-  grid-template-columns:1.05fr .95fr; gap:48px; align-items:center; }}
-.brand {{ padding:8px 12px; }}
-.mark {{ width:76px; height:76px; margin-bottom:22px; filter:drop-shadow(0 8px 18px rgba(250,189,47,.18)); }}
-.brand h2 {{ font-size:34px; line-height:1.1; margin:0 0 10px; letter-spacing:-.5px; }}
+.shell {{ width:100%; max-width:520px; display:flex; flex-direction:column; align-items:center; gap:18px; }}
+.brand {{ text-align:center; padding:0 8px 6px; }}
+.mark {{ width:72px; height:72px; margin:0 auto 14px; filter:drop-shadow(0 8px 18px rgba(250,189,47,.18)); }}
+.brand h2 {{ font-size:30px; line-height:1.1; margin:0 0 8px; letter-spacing:-.5px; }}
 .brand h2 b {{ color:var(--yellow); font-weight:800; }}
-.brand p {{ color:#bdae93; margin:0 0 24px; max-width:420px; font-size:15px; }}
-.features {{ list-style:none; padding:0; margin:0 0 26px; display:grid; gap:10px; }}
-.features li {{ display:flex; gap:10px; align-items:center; color:#d5c4a1; font-size:14px; }}
-.features li::before {{ content:""; width:7px; height:7px; border-radius:50%;
-  background:var(--green); box-shadow:0 0 0 4px rgba(184,187,38,.12); }}
+.brand p {{ color:#bdae93; margin:0 auto 10px; max-width:440px; font-size:14px; }}
 .chip {{ display:inline-flex; gap:8px; align-items:center; padding:7px 12px; border-radius:999px;
   background:rgba(80,73,69,.5); border:1px solid #504945; color:var(--gray); font-size:12px; }}
 .card {{ width:100%; background:linear-gradient(180deg,rgba(60,56,54,.96),rgba(40,40,40,.96));
@@ -307,13 +304,11 @@ a:hover {{ text-decoration:underline; }}
   border-radius:7px; color:var(--yellow); font-size:12px; box-shadow:none; }}
 .eye:hover {{ transform:translateY(-50%); background:rgba(250,189,47,.08); }}
 .foot {{ margin-top:18px; font-size:12px; color:var(--gray); text-align:center; }}
-.wide .shell {{ grid-template-columns:1fr; max-width:980px; }}
-.wide .brand {{ display:none; }}
+.wide .shell {{ max-width:980px; }}
 .wide .card {{ max-width:none; }}
 @media (max-width:820px) {{
-  body {{ padding:20px 14px; align-items:flex-start; }}
-  .shell {{ grid-template-columns:1fr; gap:18px; }}
-  .brand {{ display:none; }}
+  body {{ padding:20px 14px; }}
+  .shell {{ gap:14px; }}
   .card {{ padding:24px 20px; }}
 }}
 </style></head><body{" class=\"wide\"" if wide else ""}>
@@ -325,15 +320,8 @@ a:hover {{ text-decoration:underline; }}
       <circle cx="25" cy="32" r="2.5" fill="#282828"/><circle cx="32" cy="32" r="2.5" fill="#282828"/><circle cx="39" cy="32" r="2.5" fill="#282828"/>
     </svg>
     <h2><b>Omni</b>Secretary</h2>
-    <p>Ваш собственный ассистент на Raspberry Pi: чат, календарь, задачи,
-       заметки и голос — в одном месте, без аренды сервера.</p>
-    <ul class="features">
-      <li>Каталог ваших чатов и память</li>
-      <li>События, задачи и напоминания</li>
-      <li>Obsidian-вольт с правами по папкам</li>
-      <li>Голос, поиск в интернете и Telegram</li>
-    </ul>
-    <span class="chip">self-hosted · приватный · всегда под рукой</span>
+    <p>Ваш собственный ассистент: чат, календарь, задачи, заметки и голос — в одном месте.</p>
+    <span class="chip">self-hosted · приватный</span>
   </section>
   <section class="card">
     <div class="card-head">Личный кабинет</div>
@@ -911,8 +899,10 @@ def account(request: Request, message: str = "", error: int = 0):
     preset_options = "".join(
         f'<option value="{name}"{" selected" if name == profile["preset"] else ""}>{name}</option>'
         for name in PRESETS)
-    admin_link = ('<a href="/portal/admin/status">Устройство</a> · '
-                  if OWNER and session.get("u") == OWNER else "")
+    admin_links = ""
+    if OWNER and session.get("u") == OWNER:
+        admin_links = ('<a href="/portal/admin/status">Устройство</a> · '
+                       '<a href="/portal/admin/llm">Провайдер (система)</a> · ')
     body = f"""
 <p class="sub">Данные вашего аккаунта: город для погоды, Telegram ID,
 GitHub-токен и пресет по умолчанию. Токен хранится зашифрованно.</p>
@@ -933,7 +923,12 @@ GitHub-токен и пресет по умолчанию. Токен храни
   <select name="preset">{preset_options}</select>
   <button type="submit">Сохранить</button>
 </form>
-<p class="foot">{admin_link}<a href="/">В чат</a> · <a href="/portal/logout">Выйти</a></p>"""
+<div class="notice" style="margin-top:22px">
+  <b>Нейросеть для чата.</b> Можно подключить свой OpenAI-совместимый провайдер
+  и ключ — он будет использоваться только в вашем аккаунте.
+  <a href="/portal/llm">Настроить личный провайдер →</a>
+</div>
+<p class="foot">{admin_links}<a href="/">В чат</a> · <a href="/portal/logout">Выйти</a></p>"""
     return HTMLResponse(page("Личные настройки", body, message, bool(error)))
 
 
@@ -1020,10 +1015,137 @@ def geocode(query: str) -> tuple[float | None, float | None]:
     return float(found[0]["lat"]), float(found[0]["lon"])
 
 
-# Шифруем токены, сохранённые открытым текстом до этой версии. Идемпотентно.
+# ── Провайдеры LLM ───────────────────────────────────────────────────────
+
+def _provider_form(action: str, info: dict, title: str, intro: str,
+                   back: str = "/portal/account") -> str:
+    enabled = "checked" if info.get("enabled") else ""
+    fallback = "checked" if info.get("fallback", True) else ""
+    key_hint = "сохранён (оставьте пустым, чтобы не менять)" if info.get("has_key") else "не задан"
+    return f"""
+<p class="sub">{esc(intro)}</p>
+<form method="post" action="{esc(action)}">
+  <input type="hidden" name="csrf" value="{csrf_token()}">
+  <label style="text-transform:none;letter-spacing:0;display:flex;gap:10px;align-items:center">
+    <input type="checkbox" name="enabled" value="1" {enabled} style="width:auto;margin:0">
+    Включить этого провайдера
+  </label>
+  <label>Название (для себя)</label>
+  <input name="name" value="{esc(info.get('name',''))}" placeholder="Например, OpenRouter / мой прокси">
+  <label>Базовый URL (OpenAI-совместимый)</label>
+  <input name="base_url" value="{esc(info.get('base_url',''))}"
+         placeholder="https://openrouter.ai/api/v1">
+  <label>API-ключ ({key_hint})</label>
+  <div class="pwd"><input id="llmkey" name="api_key" type="password" autocomplete="off"
+         placeholder="sk-... или оставьте пустым"><button type="button" class="eye"
+         onclick="togglePw(this)">Показать</button></div>
+  <label>Модель по умолчанию</label>
+  <input name="model" value="{esc(info.get('model',''))}"
+         placeholder="openai/gpt-4o-mini">
+  <label style="text-transform:none;letter-spacing:0;display:flex;gap:10px;align-items:center">
+    <input type="checkbox" name="fallback" value="1" {fallback} style="width:auto;margin:0">
+    При ошибке/лимите переключаться на бесплатную модель
+  </label>
+  <button type="submit">Сохранить</button>
+</form>
+<form method="post" action="{esc(action)}/clear" style="margin-top:10px">
+  <input type="hidden" name="csrf" value="{csrf_token()}">
+  <button type="submit" class="btn" style="margin-top:0;background:rgba(251,73,52,.12);border-color:#fb4934;color:#fb4934">Удалить настройки провайдера</button>
+</form>
+<p class="foot"><a href="{esc(back)}">← Назад</a> · <a href="/">В чат</a></p>"""
+
+
+@app.get("/llm", response_class=HTMLResponse)
+def llm_personal(request: Request, message: str = "", error: int = 0):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    info = llm.public(session["uid"])
+    body = _provider_form("/portal/llm", info, "Мой провайдер нейросети",
+        "Ваш личный OpenAI-совместимый провайдер и ключ. Используется только в "
+        "вашем аккаунте (в веб-чате и приложении), ключ хранится зашифрованно на "
+        "сервере и не показывается в браузере. Если не включён — используется "
+        "общесистемный провайдер или бесплатная модель.")
+    return HTMLResponse(page("Мой провайдер", body, message, bool(error)))
+
+
+@app.post("/llm", response_class=HTMLResponse)
+def llm_personal_save(request: Request, name: str = Form(""), base_url: str = Form(""),
+                      api_key: str = Form(""), model: str = Form(""),
+                      enabled: str = Form(""), fallback: str = Form(""),
+                      csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return RedirectResponse("/portal/llm?error=1&message=Форма+устарела", status_code=303)
+    if enabled and not base_url.strip():
+        return RedirectResponse("/portal/llm?error=1&message=Укажите+базовый+URL", status_code=303)
+    llm.save(session["uid"], name=name, base_url=base_url, api_key=api_key, model=model,
+             enabled=bool(enabled), fallback=bool(fallback),
+             updated_at=datetime.now(timezone.utc).isoformat())
+    return RedirectResponse("/portal/llm?message=Сохранено", status_code=303)
+
+
+@app.post("/llm/clear", response_class=HTMLResponse)
+def llm_personal_clear(request: Request, csrf: str = Form("")):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return RedirectResponse("/portal/llm?error=1&message=Форма+устарела", status_code=303)
+    llm.delete(session["uid"])
+    return RedirectResponse("/portal/llm?message=Личный+провайдер+удалён", status_code=303)
+
+
+@app.get("/admin/llm", response_class=HTMLResponse)
+def llm_admin(request: Request, message: str = "", error: int = 0):
+    session = read_session(request)
+    if not session or not OWNER or session.get("u") != OWNER:
+        return RedirectResponse("/portal/login", status_code=303)
+    info = llm.public(llm.SYSTEM_KEY)
+    body = _provider_form("/portal/admin/llm", info, "Общесистемный провайдер",
+        "Провайдер и ключ для всех пользователей по умолчанию (если у пользователя "
+        "нет личного). Ключ хранится зашифрованно на сервере. OpenRouter из .env "
+        "остаётся запасным вариантом, если системный провайдер не задан.")
+    body += '<p class="foot"><a href="/portal/admin/status">Устройство</a> · <a href="/portal/account">Настройки</a></p>'
+    return HTMLResponse(page("Провайдер (система)", body, message, bool(error)))
+
+
+@app.post("/admin/llm", response_class=HTMLResponse)
+def llm_admin_save(request: Request, name: str = Form(""), base_url: str = Form(""),
+                   api_key: str = Form(""), model: str = Form(""),
+                   enabled: str = Form(""), fallback: str = Form(""),
+                   csrf: str = Form("")):
+    session = read_session(request)
+    if not session or not OWNER or session.get("u") != OWNER:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return RedirectResponse("/portal/admin/llm?error=1&message=Форма+устарела", status_code=303)
+    if enabled and not base_url.strip():
+        return RedirectResponse("/portal/admin/llm?error=1&message=Укажите+базовый+URL", status_code=303)
+    llm.save(llm.SYSTEM_KEY, name=name, base_url=base_url, api_key=api_key, model=model,
+             enabled=bool(enabled), fallback=bool(fallback),
+             updated_at=datetime.now(timezone.utc).isoformat())
+    return RedirectResponse("/portal/admin/llm?message=Сохранено", status_code=303)
+
+
+@app.post("/admin/llm/clear", response_class=HTMLResponse)
+def llm_admin_clear(request: Request, csrf: str = Form("")):
+    session = read_session(request)
+    if not session or not OWNER or session.get("u") != OWNER:
+        return RedirectResponse("/portal/login", status_code=303)
+    if not csrf_ok(csrf):
+        return RedirectResponse("/portal/admin/llm?error=1&message=Форма+устарела", status_code=303)
+    llm.delete(llm.SYSTEM_KEY)
+    return RedirectResponse("/portal/admin/llm?message=Системный+провайдер+удалён", status_code=303)
+
+
+# Инициализация хранилища LLM-провайдеров и конфига шлюза.
 try:
-    migrate_tokens()
-except Exception:  # noqa: BLE001 — портал должен подняться даже при сбое миграции
+    llm.db().close()
+    llm.write_gateway_config()
+except Exception:  # noqa: BLE001
     pass
 
 
