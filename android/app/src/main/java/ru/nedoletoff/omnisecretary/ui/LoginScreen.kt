@@ -2,6 +2,7 @@ package ru.nedoletoff.omnisecretary.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -33,11 +34,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import ru.nedoletoff.omnisecretary.R
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.Session
@@ -64,6 +67,11 @@ fun LoginScreen(onLoggedIn: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Image(
+            painter = painterResource(R.drawable.ic_launcher_foreground),
+            contentDescription = "OmniSecretary",
+            modifier = androidx.compose.ui.Modifier.size(88.dp),
+        )
         Text("OmniSecretary", style = MaterialTheme.typography.headlineMedium,
             color = c.accent)
         Text("Личный секретарь на вашем Raspberry Pi",

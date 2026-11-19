@@ -79,7 +79,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
@@ -163,7 +162,7 @@ private fun RichMessage(text: String, c: AppColors) {
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(Modifier.padding(8.dp)) {
-                    Text(part.trim().ifBlank { "…" }, fontFamily = FontFamily.Monospace,
+                    Text(part.trim().ifBlank { "…" }, fontFamily = CodeFont,
                         fontSize = 12.sp, color = c.text)
                 }
             }

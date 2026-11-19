@@ -5,7 +5,7 @@
 заметкам, личному Obsidian-вольту и голосу с телефона.
 
 - **Пакет:** `ru.nedoletoff.omnisecretary`
-- **Версия:** 0.1.0-beta (versionCode 10)
+- **Версия:** 1.0.4-beta (versionCode 10004; номера формируются из тега `v1.0.4-beta`/`android-v1.0.4-beta`)
 - **Минимум:** Android 8.0 (API 26), **целевая:** API 37
 - **Сервер по умолчанию:** `https://nedoletoff.sknt.ru`
 - **Сборка:** GitHub Actions, артефакт APK и релизы по тегу `android-v*`
@@ -88,7 +88,7 @@
 
 ### Из GitHub Releases (рекомендуется)
 1. Откройте [Releases](https://github.com/nedoletoff/omnisecretary/releases)
-   и скачайте APK тега `android-v*` (например, `android-v0.1.0-beta`).
+   и скачайте APK тега `android-v*` (например, `android-v1.0.4-beta`).
 2. На телефоне разрешите установку из неизвестных источников для
    браузера/файлового менеджера.
 3. Откройте APK и установите.
@@ -160,7 +160,7 @@
 
 ### Версионирование
 - `versionName` / `versionCode` — в `android/app/build.gradle.kts`.
-- Теги релизов: `android-v<version>` (например, `android-v0.1.0-beta`).
+- Теги релизов: `android-v<version>` (например, `android-v1.0.4-beta`).
 
 ## API сервера (для клиента)
 

@@ -15,6 +15,10 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import ru.nedoletoff.omnisecretary.R
 
 // Палитра Gruvbox (фирменная тема).
 private val GbBg = Color(0xFF282828)
@@ -28,6 +32,9 @@ private val GbRed = Color(0xFFFB4934)
 private val GbBlue = Color(0xFF83A598)
 private val GbAqua = Color(0xFF8EC07C)
 private val GbOrange = Color(0xFFFE8019)
+
+/** Моноширинный шрифт для блоков кода с поддержкой кириллицы. */
+val CodeFont = FontFamily(Font(R.font.noto_sans_mono, FontWeight.Normal))
 
 /** Семантические цвета приложения — независимы для каждой темы. */
 data class AppColors(

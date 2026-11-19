@@ -1,7 +1,39 @@
+import java.io.ByteArrayOutputStream
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Версия берётся из тега (v1.0.4-beta / android-v1.0.4-beta),
+// чтобы разные сборки не получали одинаковый versionCode.
+fun detectAppVersion(): Pair<String, Int> {
+    val fromTag = System.getenv("GITHUB_REF_NAME")
+        ?.takeIf { it.isNotBlank() && it != "main" && it != "master" }
+        ?: try {
+            val p = ProcessBuilder("git", "describe", "--tags", "--abbrev=0")
+                .directory(rootDir).start()
+            val out = ByteArrayOutputStream()
+            p.inputStream.use { it.copyTo(out) }
+            p.waitFor()
+            out.toString().trim().takeIf { it.isNotBlank() }
+        } catch (_: Exception) { null }
+
+    val raw = fromTag.orEmpty()
+    val normalized = raw.removePrefix("android-v").removePrefix("v")
+    val m = Regex("""^(\d+)\.(\d+)\.(\d+)(?:[-.]beta)?$""").find(normalized)
+    return if (m != null) {
+        val major = m.groupValues[1].toInt()
+        val minor = m.groupValues[2].toInt()
+        val patch = m.groupValues[3].toInt()
+        normalized to (major * 10000 + minor * 100 + patch)
+    } else {
+        // Резервная версия для сборок из ветки без тега.
+        "1.0.4-beta" to 10004
+    }
+}
+
+val (appVersionName, appVersionCode) = detectAppVersion()
 
 android {
     namespace = "ru.nedoletoff.omnisecretary"
@@ -11,8 +43,8 @@ android {
         applicationId = "ru.nedoletoff.omnisecretary"
         minSdk = 26
         targetSdk = 37
-        versionCode = 10
-        versionName = "0.1.0-beta"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {

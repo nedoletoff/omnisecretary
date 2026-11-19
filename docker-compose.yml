@@ -208,6 +208,7 @@ services:
       # при старте, поэтому монтировать в оба каталога нельзя — падает
       # с «are the same file»).
       - ./theme/gruvbox.css:/app/build/static/custom.css:ro
+      - ./theme/fonts:/app/build/static/fonts:ro
     # Порт наружу не публикуем: доступ только через nginx.
     # Для отладки с хоста раскомментируйте строку ниже.
     # ports:

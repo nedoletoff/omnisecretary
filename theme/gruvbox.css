@@ -10,6 +10,14 @@
  * Рекомендуемый режим: Settings → Interface → Theme → Dark.
  */
 
+/* Единый моноширинный шрифт интерфейса и блоков кода (кириллица + латынь). */
+@font-face {
+  font-family: "Noto Sans Mono";
+  src: url("/static/fonts/NotoSansMono-Variable.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
 :root {
   /* Нейтральная шкала gruvbox: 50 — самый светлый, 950 — самый тёмный */
   --color-gray-50: #fbf1c7 !important;
@@ -124,9 +132,11 @@ html.dark {
 
 /* Код и цитаты — bg1 / bg2 */
 .dark pre,
-.dark code {
+.dark code,
+.dark textarea {
   background-color: #3c3836 !important;
   color: #ebdbb2 !important;
+  font-family: "Noto Sans Mono", ui-monospace, monospace !important;
 }
 
 .dark blockquote {
@@ -160,4 +170,5 @@ html.dark {
   background-color: #32302f !important;
   color: #ebdbb2 !important;
   border-color: #504945 !important;
+  font-family: "Noto Sans Mono", ui-monospace, monospace !important;
 }
