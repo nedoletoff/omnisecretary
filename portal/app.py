@@ -271,11 +271,30 @@ button:hover {{ filter:brightness(1.08); }}
 .notice {{ margin:0 0 16px; padding:10px 12px; border-left:3px solid var(--green);
   background:var(--bg); font-size:13px; }}
 a {{ color:var(--yellow); }}
+.btn {{ display:block; margin-top:20px; width:100%; padding:11px; border-radius:8px;
+  background:var(--bg2); color:var(--fg); text-align:center; text-decoration:none;
+  font:inherit; font-weight:700; }}
+.btn:hover {{ filter:brightness(1.12); }}
+.pwd {{ position:relative; }}
+.pwd input {{ padding-right:92px; }}
+.eye {{ position:absolute; right:8px; top:50%; transform:translateY(-50%);
+  width:auto; margin:0; padding:6px 10px; background:transparent;
+  border:1px solid var(--bg2); color:var(--yellow); font-size:12px; }}
 .foot {{ margin-top:18px; font-size:12px; color:var(--gray); text-align:center; }}
 </style></head><body{" class=\"wide\"" if wide else ""}><div class="card">
 <h1><span>Omni</span>Secretary</h1>
 <p class="sub">{esc(title)}</p>{notice}{body}
-</div></body></html>"""
+</div>
+<script>
+function togglePw(el) {{
+  const input = el.parentElement.querySelector('input');
+  if (!input) return;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  el.textContent = show ? 'Скрыть' : 'Показать';
+}}
+</script>
+</body></html>"""
 
 
 def secrets() -> tuple[str, str]:
@@ -368,11 +387,17 @@ def register_form(request: Request, message: str = "", error: int = 0):
   <input name="username" required minlength="3" maxlength="32"
          pattern="[a-zA-Z0-9._-]+" autocomplete="username" autofocus>
   <label>Пароль</label>
-  <input type="password" name="password" required minlength="8"
-         autocomplete="new-password">
+  <div class="pwd">
+    <input type="password" name="password" required minlength="8"
+           autocomplete="new-password">
+    <button type="button" class="eye" onclick="togglePw(this)">Показать</button>
+  </div>
   <label>Пароль ещё раз</label>
-  <input type="password" name="password2" required minlength="8"
-         autocomplete="new-password">
+  <div class="pwd">
+    <input type="password" name="password2" required minlength="8"
+           autocomplete="new-password">
+    <button type="button" class="eye" onclick="togglePw(this)">Показать</button>
+  </div>
   <label>Токен приглашения</label>
   <input name="token" required autocomplete="off">
   <button type="submit">Создать аккаунт</button>
@@ -425,11 +450,29 @@ def register(request: Request, username: str = Form(""), password: str = Form(""
     finally:
         conn.close()
 
-    body = """
-<p class="sub">Аккаунт создан. Теперь войдите под своим логином.</p>
-<p><a href="/portal/login">Перейти ко входу</a></p>
+    # Сразу пускаем пользователя в личные настройки: там он добавит
+    # GitHub-токен, город для погоды и пресет, как и задумывалось.
+    created_token, created_id, login_error = owui_login(username, password)
+    if login_error or not created_token:
+        body = f"""
+<p class="sub">Аккаунт создан, но автоматический вход не удался: {esc(login_error)}</p>
+<p><a class="btn" href="/portal/login">Войти под своим логином</a></p>"""
+        return HTMLResponse(page("Готово", body))
+    message = "Аккаунт создан. Заполните личные настройки."
+    body = f"""
+<p class="sub">Аккаунт создан. Сейчас откроются настройки, где можно добавить
+GitHub-токен, город для погоды, Telegram ID и пресет по умолчанию.</p>
+<script>
+localStorage.setItem("token", {json.dumps(created_token)});
+location.replace("/portal/account?message=" + {json.dumps(urllib.parse.quote(message))});
+</script>
+<noscript><a class="btn" href="/portal/account">Открыть настройки</a></noscript>
 <p class="foot">Тот же логин и пароль работают в чате Open WebUI.</p>"""
-    return HTMLResponse(page("Готово", body))
+    response = HTMLResponse(page("Готово", body))
+    response.set_cookie("portal_session",
+                        make_session(created_id, username, created_token),
+                        max_age=SESSION_TTL, httponly=True, samesite="lax")
+    return response
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -439,10 +482,14 @@ def login_form(message: str = "", error: int = 0):
   <label>Логин</label>
   <input name="username" required autocomplete="username" autofocus>
   <label>Пароль</label>
-  <input type="password" name="password" required autocomplete="current-password">
+  <div class="pwd">
+    <input type="password" name="password" required autocomplete="current-password">
+    <button type="button" class="eye" onclick="togglePw(this)">Показать</button>
+  </div>
   <button type="submit">Войти</button>
 </form>
-<p class="foot">Нет аккаунта? <a href="/portal/register">Зарегистрироваться</a></p>"""
+<p class="foot">Нет аккаунта?</p>
+<a class="btn" href="/portal/register">Зарегистрироваться</a>"""
     return HTMLResponse(page("Вход", body, message, bool(error)))
 
 
@@ -811,6 +858,8 @@ def account(request: Request, message: str = "", error: int = 0):
     admin_link = ('<a href="/portal/admin/status">Устройство</a> · '
                   if OWNER and session.get("u") == OWNER else "")
     body = f"""
+<p class="sub">Данные вашего аккаунта: город для погоды, Telegram ID,
+GitHub-токен и пресет по умолчанию. Токен хранится зашифрованно.</p>
 <form method="post" action="/portal/account">
   <input type="hidden" name="csrf" value="{csrf_token()}">
   <label>Логин</label>
