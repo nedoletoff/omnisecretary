@@ -686,7 +686,7 @@ def quick(request: Request):
     session = read_session(request)
     if not session:
         return RedirectResponse("/portal/login", status_code=303)
-    return quick_page(session)
+    return RedirectResponse("/portal/workspace", status_code=303)
 
 
 @app.post("/quick/event", response_class=HTMLResponse)
