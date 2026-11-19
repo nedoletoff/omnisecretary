@@ -248,42 +248,98 @@ def page(title: str, body: str, message: str = "", error: bool = False,
 <title>{esc(title)} — OmniSecretary</title>
 <style>
 :root {{ --bg:#282828; --bg1:#3c3836; --bg2:#504945; --fg:#ebdbb2;
-        --gray:#928374; --yellow:#fabd2f; --green:#b8bb26; --red:#fb4934; }}
+        --gray:#928374; --yellow:#fabd2f; --orange:#fe8019; --green:#b8bb26;
+        --red:#fb4934; --blue:#83a598; }}
 * {{ box-sizing:border-box; }}
-body {{ margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
-       font:16px/1.5 ui-monospace,"JetBrains Mono",monospace;
-       display:flex; align-items:center; justify-content:center; padding:24px; }}
-.card {{ width:100%; max-width:440px; background:var(--bg1);
-        border:1px solid var(--bg2); border-radius:14px; padding:28px; }}
-.wide .card {{ max-width:980px; }}
-h1 {{ font-size:20px; margin:0 0 4px; }}
-h1 span {{ color:var(--yellow); }}
-p.sub {{ color:var(--gray); margin:0 0 20px; font-size:13px; }}
-label {{ display:block; font-size:13px; color:var(--gray); margin:14px 0 6px; }}
-input,select {{ width:100%; padding:10px 12px; border-radius:8px;
-  border:1px solid var(--bg2); background:var(--bg); color:var(--fg);
-  font:inherit; }}
-input:focus,select:focus {{ outline:none; border-color:var(--yellow); }}
-button {{ margin-top:20px; width:100%; padding:11px; border:0; border-radius:8px;
-  background:var(--yellow); color:#282828; font:inherit; font-weight:700;
-  cursor:pointer; }}
-button:hover {{ filter:brightness(1.08); }}
-.notice {{ margin:0 0 16px; padding:10px 12px; border-left:3px solid var(--green);
-  background:var(--bg); font-size:13px; }}
-a {{ color:var(--yellow); }}
-.btn {{ display:block; margin-top:20px; width:100%; padding:11px; border-radius:8px;
-  background:var(--bg2); color:var(--fg); text-align:center; text-decoration:none;
-  font:inherit; font-weight:700; }}
-.btn:hover {{ filter:brightness(1.12); }}
+html,body {{ min-height:100%; }}
+body {{ margin:0; color:var(--fg); font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;
+  background:
+    radial-gradient(900px 500px at 12% 12%, rgba(250,189,47,.13), transparent 60%),
+    radial-gradient(700px 500px at 88% 88%, rgba(254,128,25,.10), transparent 60%),
+    linear-gradient(145deg,#1d2021 0%,#282828 45%,#32302f 100%);
+  display:flex; align-items:center; justify-content:center; padding:32px 20px; }}
+.shell {{ width:100%; max-width:1000px; display:grid;
+  grid-template-columns:1.05fr .95fr; gap:48px; align-items:center; }}
+.brand {{ padding:8px 12px; }}
+.mark {{ width:76px; height:76px; margin-bottom:22px; filter:drop-shadow(0 8px 18px rgba(250,189,47,.18)); }}
+.brand h2 {{ font-size:34px; line-height:1.1; margin:0 0 10px; letter-spacing:-.5px; }}
+.brand h2 b {{ color:var(--yellow); font-weight:800; }}
+.brand p {{ color:#bdae93; margin:0 0 24px; max-width:420px; font-size:15px; }}
+.features {{ list-style:none; padding:0; margin:0 0 26px; display:grid; gap:10px; }}
+.features li {{ display:flex; gap:10px; align-items:center; color:#d5c4a1; font-size:14px; }}
+.features li::before {{ content:""; width:7px; height:7px; border-radius:50%;
+  background:var(--green); box-shadow:0 0 0 4px rgba(184,187,38,.12); }}
+.chip {{ display:inline-flex; gap:8px; align-items:center; padding:7px 12px; border-radius:999px;
+  background:rgba(80,73,69,.5); border:1px solid #504945; color:var(--gray); font-size:12px; }}
+.card {{ width:100%; background:linear-gradient(180deg,rgba(60,56,54,.96),rgba(40,40,40,.96));
+  border:1px solid #504945; border-radius:20px; padding:32px;
+  box-shadow:0 24px 60px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.03); }}
+.card-head {{ display:flex; align-items:center; gap:10px; margin-bottom:22px;
+  color:var(--gray); font-size:12px; text-transform:uppercase; letter-spacing:1.4px; }}
+.card-head::before {{ content:""; width:9px; height:9px; border-radius:50%;
+  background:var(--yellow); box-shadow:0 0 12px var(--yellow); }}
+h1 {{ font-size:24px; line-height:1.25; margin:0 0 6px; }}
+p.sub {{ color:var(--gray); margin:0 0 22px; font-size:13px; }}
+label {{ display:block; font-size:12px; color:#bdae93; margin:16px 0 7px;
+  text-transform:uppercase; letter-spacing:.6px; }}
+input,select {{ width:100%; padding:12px 14px; border-radius:10px;
+  border:1px solid #504945; background:#1d2021; color:var(--fg);
+  font:14px/1.4 ui-monospace,"JetBrains Mono",monospace; transition:.18s; }}
+input:focus,select:focus {{ outline:none; border-color:var(--yellow);
+  box-shadow:0 0 0 3px rgba(250,189,47,.14); }}
+button {{ margin-top:22px; width:100%; padding:13px 16px; border:0; border-radius:10px;
+  background:linear-gradient(135deg,var(--yellow),var(--orange));
+  color:#282828; font:700 14px/1 system-ui,sans-serif; cursor:pointer;
+  box-shadow:0 8px 22px rgba(250,189,47,.18); transition:.18s; }}
+button:hover {{ filter:brightness(1.08); transform:translateY(-1px); }}
+.notice {{ margin:0 0 18px; padding:12px 14px; border-left:3px solid var(--green);
+  background:rgba(40,40,40,.7); font-size:13px; border-radius:0 8px 8px 0; }}
+a {{ color:var(--yellow); text-decoration:none; }}
+a:hover {{ text-decoration:underline; }}
+.btn {{ display:block; margin-top:14px; width:100%; padding:12px 16px; border-radius:10px;
+  background:rgba(80,73,69,.45); border:1px solid #504945; color:var(--fg);
+  text-align:center; text-decoration:none; font:700 14px/1 system-ui,sans-serif; }}
+.btn:hover {{ background:#504945; text-decoration:none; }}
 .pwd {{ position:relative; }}
-.pwd input {{ padding-right:92px; }}
-.eye {{ position:absolute; right:8px; top:50%; transform:translateY(-50%);
-  width:auto; margin:0; padding:6px 10px; background:transparent;
-  border:1px solid var(--bg2); color:var(--yellow); font-size:12px; }}
+.pwd input {{ padding-right:96px; }}
+.eye {{ position:absolute; right:7px; top:50%; transform:translateY(-50%);
+  width:auto; margin:0; padding:7px 10px; background:transparent; border:1px solid #504945;
+  border-radius:7px; color:var(--yellow); font-size:12px; box-shadow:none; }}
+.eye:hover {{ transform:translateY(-50%); background:rgba(250,189,47,.08); }}
 .foot {{ margin-top:18px; font-size:12px; color:var(--gray); text-align:center; }}
-</style></head><body{" class=\"wide\"" if wide else ""}><div class="card">
-<h1><span>Omni</span>Secretary</h1>
-<p class="sub">{esc(title)}</p>{notice}{body}
+.wide .shell {{ grid-template-columns:1fr; max-width:980px; }}
+.wide .brand {{ display:none; }}
+.wide .card {{ max-width:none; }}
+@media (max-width:820px) {{
+  body {{ padding:20px 14px; align-items:flex-start; }}
+  .shell {{ grid-template-columns:1fr; gap:18px; }}
+  .brand {{ display:none; }}
+  .card {{ padding:24px 20px; }}
+}}
+</style></head><body{" class=\"wide\"" if wide else ""}>
+<div class="shell">
+  <section class="brand">
+    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+      <rect x="3" y="3" width="58" height="58" rx="17" fill="#3c3836" stroke="#fabd2f" stroke-width="2"/>
+      <path d="M17 20h30a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H33l-10 7v-7h-6a4 4 0 0 1-4-4V24a4 4 0 0 1 4-4z" fill="#fabd2f"/>
+      <circle cx="25" cy="32" r="2.5" fill="#282828"/><circle cx="32" cy="32" r="2.5" fill="#282828"/><circle cx="39" cy="32" r="2.5" fill="#282828"/>
+    </svg>
+    <h2><b>Omni</b>Secretary</h2>
+    <p>Ваш собственный ассистент на Raspberry Pi: чат, календарь, задачи,
+       заметки и голос — в одном месте, без аренды сервера.</p>
+    <ul class="features">
+      <li>Каталог ваших чатов и память</li>
+      <li>События, задачи и напоминания</li>
+      <li>Obsidian-вольт с правами по папкам</li>
+      <li>Голос, поиск в интернете и Telegram</li>
+    </ul>
+    <span class="chip">self-hosted · приватный · всегда под рукой</span>
+  </section>
+  <section class="card">
+    <div class="card-head">Личный кабинет</div>
+    <h1>{esc(title)}</h1>
+    <p class="sub">Личное пространство OmniSecretary</p>{notice}{body}
+  </section>
 </div>
 <script>
 function togglePw(el) {{
