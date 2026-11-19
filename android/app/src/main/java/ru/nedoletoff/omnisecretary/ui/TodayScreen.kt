@@ -66,12 +66,48 @@ fun TodayScreen(api: Api, reloadKey: Int) {
     var editingTask by remember { mutableStateOf<ru.nedoletoff.omnisecretary.data.TodayTask?>(null) }
     var editingEvent by remember { mutableStateOf<ru.nedoletoff.omnisecretary.data.TodayEvent?>(null) }
 
+    val pendingPrefs = remember { context.getSharedPreferences("omni_pending", Context.MODE_PRIVATE) }
+    var pendingNotes by remember {
+        mutableStateOf(runCatching {
+            org.json.JSONArray(pendingPrefs.getString("notes", "[]")).length()
+        }.getOrDefault(0))
+    }
+    fun enqueuePendingNote(title: String, text: String, folder: String = "AI/Inbox") {
+        val arr = runCatching { org.json.JSONArray(pendingPrefs.getString("notes", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        arr.put(org.json.JSONObject().put("title", title).put("text", text).put("folder", folder))
+        pendingPrefs.edit().putString("notes", arr.toString()).apply()
+        pendingNotes = arr.length()
+    }
+    suspend fun flushPendingNotes(): Int {
+        val arr = runCatching { org.json.JSONArray(pendingPrefs.getString("notes", "[]")) }
+            .getOrDefault(org.json.JSONArray())
+        if (arr.length() == 0) return 0
+        val remaining = org.json.JSONArray()
+        var sent = 0
+        for (i in 0 until arr.length()) {
+            val item = arr.optJSONObject(i) ?: continue
+            val ok = runCatching {
+                api.saveNote(item.optString("title", "Заметка"), item.optString("text", ""),
+                    item.optString("folder", "AI/Inbox"))
+            }.isSuccess
+            if (ok) sent++ else remaining.put(item)
+        }
+        pendingPrefs.edit().putString("notes", remaining.toString()).apply()
+        pendingNotes = remaining.length()
+        return sent
+    }
+
     suspend fun load(showSpinner: Boolean = true) {
         if (showSpinner) busy = true
         error = ""
         try {
             data = api.today()
             reminders = runCatching { api.reminders() }.getOrDefault(emptyList())
+            if (pendingNotes > 0) {
+                val sent = runCatching { flushPendingNotes() }.getOrDefault(0)
+                if (sent > 0) notice = "Отправлено отложенных заметок: $sent"
+            }
         } catch (failure: Exception) {
             error = failure.message ?: "Не удалось загрузить сводку"
         } finally {
@@ -110,6 +146,18 @@ fun TodayScreen(api: Api, reloadKey: Int) {
 
         if (notice.isNotBlank()) {
             Text(notice, color = GruvboxAqua, style = MaterialTheme.typography.bodySmall)
+        }
+        if (pendingNotes > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("В очереди заметок: $pendingNotes", color = GruvboxOrange,
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = {
+                    scope.launch {
+                        val sent = runCatching { flushPendingNotes() }.getOrDefault(0)
+                        notice = if (sent > 0) "Отправлено: $sent" else "Не удалось отправить, попробуйте позже"
+                    }
+                }) { Text("Отправить") }
+            }
         }
         if (busy && data == null) {
             CircularProgressIndicator()
@@ -231,9 +279,18 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         DialogKind.NOTE -> NoteDialog(
             onDismiss = { dialog = DialogKind.NONE },
             onSave = { title, text ->
-                runAction {
-                    val path = api.saveNote(title.ifBlank { "Заметка" }, text)
-                    "Сохранено: $path"
+                scope.launch {
+                    val t = title.ifBlank { "Заметка" }
+                    try {
+                        val path = api.saveNote(t, text)
+                        notice = "Сохранено: $path"
+                        dialog = DialogKind.NONE
+                        load(showSpinner = false)
+                    } catch (failure: Exception) {
+                        enqueuePendingNote(t, text)
+                        notice = "Нет связи: заметка сохранена в очередь (${pendingNotes})"
+                        dialog = DialogKind.NONE
+                    }
                 }
             })
         DialogKind.REMINDER -> ReminderDialog(
