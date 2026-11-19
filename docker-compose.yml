@@ -462,6 +462,7 @@ services:
       TELEGRAM_OWNER_ID: ${TELEGRAM_OWNER_ID:-}
       VAULT_DIR: /vault
       VAULT_INDEX_PATH: /vault-index/vault.db
+      VAULTS_ROOT: /vaults
       TZ: ${TZ:-UTC}
     volumes:
       - ./portal:/app/portal:ro
@@ -471,6 +472,7 @@ services:
       - ${DATA_ROOT}/status:/status:ro
       - ${DATA_ROOT}/vault:/vault:ro
       - ${DATA_ROOT}/vault-index:/vault-index:ro
+      - ${DATA_ROOT}/vaults:/vaults
     # backend нужен для STT/TTS и Vikunja; наружу портал не публикуется.
     networks: [frontend, backend]
     healthcheck:

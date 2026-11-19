@@ -32,6 +32,28 @@ data class VaultFile(val path: String, val size: Long)
 data class VaultResult(val path: String, val snippet: String)
 data class UploadedFile(val id: String, val name: String, val type: String, val raw: JSONObject)
 data class ReminderItem(val id: Long, val text: String, val dueAt: String)
+data class VaultPermission(
+    val path: String,
+    val read: Boolean = false,
+    val list: Boolean = false,
+    val search: Boolean = false,
+    val create: Boolean = false,
+    val append: Boolean = false,
+    val modify: Boolean = false,
+    val delete: Boolean = false,
+)
+data class VaultConfig(
+    val configured: Boolean,
+    val ready: Boolean,
+    val repoUrl: String,
+    val branch: String,
+    val writePrefix: String,
+    val status: String,
+    val lastSync: String,
+    val lastError: String,
+    val hasToken: Boolean,
+    val permissions: List<VaultPermission>,
+)
 
 /** HTTP-клиент к Pi. Все запросы — только по HTTPS (см. network_security_config). */
 class Api(private val server: String, private val token: String = "") {
@@ -409,11 +431,91 @@ class Api(private val server: String, private val token: String = "") {
         Unit
     }
 
-    // ── Вольт Obsidian (владелец) ──
+    // ── Личный Obsidian-вольт (у каждого пользователя свой репозиторий) ──
+
+    private fun parseVaultPermissions(arr: JSONArray?): List<VaultPermission> {
+        if (arr == null) return emptyList()
+        return (0 until arr.length()).mapNotNull { i ->
+            val p = arr.optJSONObject(i) ?: return@mapNotNull null
+            VaultPermission(
+                path = p.optString("path", ""),
+                read = p.optBoolean("read", false),
+                list = p.optBoolean("list", false),
+                search = p.optBoolean("search", false),
+                create = p.optBoolean("create", false),
+                append = p.optBoolean("append", false),
+                modify = p.optBoolean("modify", false),
+                delete = p.optBoolean("delete", false),
+            )
+        }
+    }
+
+    suspend fun vaultConfig(): VaultConfig = withContext(Dispatchers.IO) {
+        val o = call("/api/m/vault/config")
+        VaultConfig(
+            configured = o.optBoolean("configured", false),
+            ready = o.optBoolean("ready", false),
+            repoUrl = o.optString("repo_url", ""),
+            branch = o.optString("branch", "main"),
+            writePrefix = o.optString("write_prefix", "AI"),
+            status = o.optString("status", ""),
+            lastSync = o.optString("last_sync", ""),
+            lastError = o.optString("last_error", ""),
+            hasToken = o.optBoolean("has_token", false),
+            permissions = parseVaultPermissions(o.optJSONArray("permissions")),
+        )
+    }
+
+    suspend fun saveVaultConfig(repoUrl: String, branch: String, token: String?,
+                                permissions: List<VaultPermission>? = null): JSONObject =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject().put("repo_url", repoUrl).put("branch", branch)
+            if (!token.isNullOrBlank()) body.put("token", token)
+            if (permissions != null) {
+                val arr = JSONArray()
+                permissions.forEach { p ->
+                    arr.put(JSONObject()
+                        .put("path", p.path)
+                        .put("read", p.read).put("list", p.list).put("search", p.search)
+                        .put("create", p.create).put("append", p.append)
+                        .put("modify", p.modify).put("delete", p.delete))
+                }
+                body.put("permissions", arr)
+            }
+            call("/api/m/vault/config", "POST", body)
+        }
+
+    suspend fun syncVault(): JSONObject = withContext(Dispatchers.IO) {
+        call("/api/m/vault/sync", "POST", JSONObject())
+    }
+
+    suspend fun disconnectVault(removeLocal: Boolean = false): JSONObject = withContext(Dispatchers.IO) {
+        call("/api/m/vault/disconnect", "POST", JSONObject().put("remove_local", removeLocal))
+    }
+
+    suspend fun saveVaultPermissions(permissions: List<VaultPermission>): JSONObject =
+        withContext(Dispatchers.IO) {
+            val arr = JSONArray()
+            permissions.forEach { p ->
+                arr.put(JSONObject()
+                    .put("path", p.path)
+                    .put("read", p.read).put("list", p.list).put("search", p.search)
+                    .put("create", p.create).put("append", p.append)
+                    .put("modify", p.modify).put("delete", p.delete))
+            }
+            call("/api/m/vault/permissions", "POST", JSONObject().put("permissions", arr))
+        }
 
     suspend fun vaultFiles(q: String = ""): List<VaultFile> = withContext(Dispatchers.IO) {
         val path = if (q.isBlank()) "/api/m/vault/files" else "/api/m/vault/files?q=${java.net.URLEncoder.encode(q, "UTF-8")}"
-        val array = call(path).optJSONArray("files") ?: JSONArray()
+        val o = call(path)
+        if (o.optBoolean("configured") == false && o.has("configured")) {
+            throw IllegalStateException("NOT_CONFIGURED")
+        }
+        if (o.optBoolean("ready") == false && o.has("ready")) {
+            throw IllegalStateException("NOT_READY")
+        }
+        val array = o.optJSONArray("files") ?: JSONArray()
         (0 until array.length()).mapNotNull { i ->
             val item = array.optJSONObject(i) ?: return@mapNotNull null
             VaultFile(item.optString("path"), item.optLong("size"))
@@ -426,8 +528,14 @@ class Api(private val server: String, private val token: String = "") {
     }
 
     suspend fun vaultSearch(q: String): List<VaultResult> = withContext(Dispatchers.IO) {
-        val array = call("/api/m/vault/search?q=${java.net.URLEncoder.encode(q, "UTF-8")}")
-            .optJSONArray("results") ?: JSONArray()
+        val o = call("/api/m/vault/search?q=${java.net.URLEncoder.encode(q, "UTF-8")}")
+        if (o.optBoolean("configured") == false && o.has("configured")) {
+            throw IllegalStateException("NOT_CONFIGURED")
+        }
+        if (o.optBoolean("ready") == false && o.has("ready")) {
+            throw IllegalStateException("NOT_READY")
+        }
+        val array = o.optJSONArray("results") ?: JSONArray()
         (0 until array.length()).mapNotNull { i ->
             val item = array.optJSONObject(i) ?: return@mapNotNull null
             VaultResult(item.optString("path"), item.optString("snippet"))

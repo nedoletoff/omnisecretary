@@ -24,6 +24,8 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 
+import vaults as user_vaults
+
 OWUI_URL = os.environ.get("OWUI_URL", "http://open-webui:8080").rstrip("/")
 SECRETS_DIR = Path(os.environ.get("SECRETS_DIR", "/secrets"))
 BOT_DB_PATH = Path(os.environ.get("BOT_DB_PATH", "/bot/bot.db"))
@@ -80,6 +82,53 @@ def _owui(token: str, path: str, params: dict | None = None) -> object:
     if response.status_code != 200:
         raise HTTPException(response.status_code, f"Open WebUI: {path}")
     return response.json()
+
+
+def _owui_json(method: str, path: str, token: str, body: dict | None = None,
+               params: dict | None = None) -> object:
+    with httpx.Client(timeout=20) as client:
+        response = client.request(method, f"{OWUI_URL}{path}", params=params,
+                                  json=body,
+                                  headers={"Authorization": f"Bearer {token}"})
+    if response.status_code not in (200, 201):
+        raise HTTPException(response.status_code, f"Open WebUI: {path}")
+    if not response.content:
+        return {}
+    try:
+        return response.json()
+    except Exception:
+        return {}
+
+
+def _vikunja_json(method: str, path: str, body: dict | None = None,
+                  params: dict | None = None) -> object:
+    return _vikunja(method, path, body=body, params=params)
+
+
+DATA_DIR = Path(os.environ.get("PORTAL_DATA", "/data"))
+PORTAL_DB = DATA_DIR / "portal.db"
+
+
+def _portal_db() -> sqlite3.Connection:
+    conn = sqlite3.connect(PORTAL_DB, timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _user_vault(user: dict) -> tuple[dict | None, str, str]:
+    """Возвращает (config, token_plain, uid)."""
+    uid = str(user.get("id") or user.get("email") or "")
+    if not uid:
+        return None, "", ""
+    try:
+        conn = _portal_db()
+        user_vaults.ensure_table(conn)
+        cfg = user_vaults.get_config(conn, uid)
+        conn.close()
+    except Exception:
+        return None, "", uid
+    token = user_vaults.decrypt_token(DATA_DIR, (cfg or {}).get("encrypted_token", ""))
+    return cfg, token, uid
 
 
 def _place() -> tuple[str, float, float]:
@@ -173,15 +222,7 @@ def _notes(token: str) -> list[dict]:
             for note in items[:5]]
 
 
-def _vault_auth() -> tuple[str, str]:
-    path = SECRETS_DIR / "vault-admin.txt"
-    values = {}
-    if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if "=" in line:
-                key, value = line.split("=", 1)
-                values[key.strip()] = value.strip()
-    return values.get("USERNAME", "owner"), values.get("PASSWORD", "")
+# Персональные вольты: авторизация через сессию пользователя, не через Basic Auth владельца.
 
 
 def _owui_call(token: str, method: str, path: str,
@@ -271,30 +312,36 @@ async def speak(request: Request) -> Response:
 
 @router.post("/note")
 async def note(request: Request) -> JSONResponse:
+    """Создать заметку в личном Obsidian-вольте пользователя (AI/*, по правам)."""
     token = _token(request)
-    _user(token)
+    user = _user(token)
     data = await request.json()
     text = str(data.get("text") or "").strip()
     if not text:
         raise HTTPException(400, "пустой текст")
-    user, password = _vault_auth()
-    if not password:
-        raise HTTPException(503, "вольт не настроен")
-    payload = {"title": str(data.get("title") or "").strip(), "text": text,
-               "folder": str(data.get("folder") or "AI/Inbox")}
+    title = str(data.get("title") or "").strip()
+    folder = str(data.get("folder") or "AI/Inbox").strip() or "AI/Inbox"
+    cfg, vtoken, uid = _user_vault(user)
+    if not cfg or not cfg.get("repo_url"):
+        raise HTTPException(409, "личный вольт не настроен")
+    if not user_vaults.is_ready(uid):
+        raise HTTPException(409, "вольт не подключён (выполните синхронизацию)")
     try:
-        with httpx.Client(timeout=180, auth=(user, password)) as client:
-            response = client.post(f"{VAULT_URL}/api/note", json=payload)
-    except httpx.HTTPError:
-        raise HTTPException(503, "вольт недоступен")
-    if response.status_code != 200:
-        detail = ""
-        try:
-            detail = str(response.json().get("detail", ""))
-        except Exception:  # noqa: BLE001
-            detail = response.text[:120]
-        raise HTTPException(response.status_code, detail or "не удалось записать заметку")
-    return JSONResponse(response.json())
+        conn = _portal_db()
+        user_vaults.ensure_table(conn)
+        result = user_vaults.create_note(uid, conn, vtoken, folder, title, text)
+        conn.close()
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        msg = str(e)
+        # не светим токен/секреты
+        if "x-access-token" in msg or "AUTHORIZATION" in msg.upper():
+            msg = "ошибка git-операции"
+        raise HTTPException(502, msg[:300] or "не удалось записать заметку")
+    return JSONResponse(result)
 
 
 @router.post("/reminder")
@@ -594,101 +641,283 @@ async def delete_owui_note(note_id: str, request: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
-# ── Вольт Obsidian (чтение/поиск, только для владельца) ─────────────────
 
-VAULT_DIR = Path(os.environ.get("VAULT_DIR", "/vault")).resolve()
-VAULT_INDEX = Path(os.environ.get("VAULT_INDEX_PATH", "/vault-index/vault.db"))
+# ── Личный Obsidian-вольт пользователя ────────────────────────────────────
+# Репозиторий и токен GitHub настраиваются пользователем; права на папки
+# (читать/писать/изменять/создавать и т.д.) задаёт сам пользователь и
+# проверяются программно на каждом запросе — промпт обход не даёт.
+
+def _vault_public_config(cfg: dict | None, uid: str) -> dict:
+    if not cfg or not cfg.get("repo_url"):
+        return {"configured": False, "ready": False}
+    ready = user_vaults.is_ready(uid) if uid else False
+    return {
+        "configured": True,
+        "ready": ready,
+        "repo_url": cfg.get("repo_url", ""),
+        "branch": cfg.get("branch", "main"),
+        "write_prefix": cfg.get("write_prefix", "AI"),
+        "status": cfg.get("status", ""),
+        "last_sync": cfg.get("last_sync", ""),
+        "last_error": cfg.get("last_error", ""),
+        "updated_at": cfg.get("updated_at", ""),
+    }
 
 
-def _require_owner(user: dict) -> None:
-    if not _is_owner(user):
-        raise HTTPException(403, "вольт доступен только владельцу")
+@router.get("/vault/config")
+def vault_config(request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    cfg, _vtoken, uid = _user_vault(user)
+    data = _vault_public_config(cfg, uid)
+    try:
+        conn = _portal_db()
+        user_vaults.ensure_table(conn)
+        data["permissions"] = user_vaults.get_permissions(conn, uid)
+        data["has_token"] = bool((cfg or {}).get("encrypted_token"))
+        conn.close()
+    except Exception:
+        data["permissions"] = []
+        data["has_token"] = False
+    return JSONResponse(data)
 
 
-def _safe_vault_path(rel: str) -> Path:
-    p = (VAULT_DIR / rel).resolve()
-    if VAULT_DIR not in p.parents and p != VAULT_DIR:
-        raise HTTPException(400, "недопустимый путь")
-    return p
+@router.post("/vault/config")
+async def vault_config_set(request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    body = await request.json()
+    repo_url = str(body.get("repo_url") or "").strip()
+    branch = str(body.get("branch") or "main").strip() or "main"
+    pat = str(body.get("token") or body.get("pat") or "").strip()
+    permissions = body.get("permissions")
+    uid = str(user.get("id") or user.get("email") or "")
+    if not uid:
+        raise HTTPException(400, "не удалось определить пользователя")
+    if not repo_url:
+        raise HTTPException(400, "нужен repo_url")
+    try:
+        repo_url = user_vaults._clean_repo_url(repo_url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    conn = _portal_db()
+    user_vaults.ensure_table(conn)
+    enc = user_vaults.encrypt_token(DATA_DIR, pat) if pat else ""
+    # если токен не передан, оставляем прежний
+    old = user_vaults.get_config(conn, uid)
+    if not enc and old:
+        enc = old.get("encrypted_token", "")
+    if not enc and not old:
+        conn.close()
+        raise HTTPException(400, "нужен токен GitHub (PAT) для доступа к репозиторию")
+    try:
+        if permissions is not None:
+            perms = user_vaults.normalize_permissions(permissions)
+        else:
+            perms = user_vaults.get_permissions(conn, uid) if old else None
+    except ValueError as e:
+        conn.close()
+        raise HTTPException(400, str(e))
+    user_vaults.upsert_config(conn, uid, repo_url, branch, enc,
+                              write_prefix="AI", permissions=perms)
+    user_vaults.set_state(conn, uid, status="configured", error="")
+    conn.close()
+    # попытка клонирования/обновления
+    plain_token = pat or user_vaults.decrypt_token(DATA_DIR, enc)
+    try:
+        user_vaults.clone_or_update(uid, repo_url, branch, plain_token)
+        conn = _portal_db()
+        user_vaults.set_state(conn, uid, status="ready", error="", synced=True)
+        conn.close()
+        return JSONResponse({"ok": True, "status": "ready"})
+    except Exception as e:
+        msg = str(e)
+        if "x-access-token" in msg or "AUTHORIZATION" in msg.upper():
+            msg = "ошибка доступа к репозиторию (проверьте токен и права)"
+        conn = _portal_db()
+        user_vaults.set_state(conn, uid, status="error", error=msg[:400])
+        conn.close()
+        return JSONResponse({"ok": False, "status": "error", "error": msg[:300]}, status_code=400)
+
+
+@router.post("/vault/sync")
+async def vault_sync(request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    cfg, vtoken, uid = _user_vault(user)
+    if not cfg or not cfg.get("repo_url"):
+        raise HTTPException(409, "личный вольт не настроен")
+    try:
+        if not user_vaults.is_ready(uid):
+            user_vaults.clone_or_update(uid, cfg.get("repo_url", ""), cfg.get("branch", "main"), vtoken)
+        result = user_vaults.sync(uid, vtoken)
+        conn = _portal_db()
+        user_vaults.set_state(conn, uid, status="ready", error="", synced=True)
+        conn.close()
+        return JSONResponse({"ok": True, **result})
+    except Exception as e:
+        msg = str(e)
+        if "x-access-token" in msg or "AUTHORIZATION" in msg.upper():
+            msg = "ошибка доступа к репозиторию"
+        conn = _portal_db()
+        user_vaults.set_state(conn, uid, status="error", error=msg[:400])
+        conn.close()
+        raise HTTPException(502, msg[:300] or "ошибка синхронизации")
+
+
+@router.post("/vault/disconnect")
+async def vault_disconnect(request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    remove_local = bool(body.get("remove_local", False))
+    _cfg, _vtoken, uid = _user_vault(user)
+    if not uid:
+        raise HTTPException(400, "не удалось определить пользователя")
+    conn = _portal_db()
+    user_vaults.delete_config(conn, uid)
+    conn.close()
+    if remove_local:
+        try:
+            user_vaults.remove_local(uid)
+        except Exception:
+            pass
+    return JSONResponse({"ok": True})
+
+
+@router.get("/vault/permissions")
+def vault_permissions_get(request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    cfg, _vtoken, uid = _user_vault(user)
+    if not cfg:
+        return JSONResponse({"permissions": user_vaults.DEFAULT_PERMISSIONS, "configured": False})
+    conn = _portal_db()
+    perms = user_vaults.get_permissions(conn, uid)
+    conn.close()
+    return JSONResponse({"permissions": perms, "configured": True})
+
+
+@router.post("/vault/permissions")
+async def vault_permissions_set(request: Request) -> JSONResponse:
+    token = _token(request)
+    user = _user(token)
+    body = await request.json()
+    perms_in = body.get("permissions")
+    try:
+        perms = user_vaults.normalize_permissions(perms_in)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    cfg, _vtoken, uid = _user_vault(user)
+    conn = _portal_db()
+    user_vaults.ensure_table(conn)
+    if not cfg:
+        conn.close()
+        raise HTTPException(409, "сначала настройте вольт")
+    user_vaults.set_permissions(conn, uid, perms)
+    conn.close()
+    return JSONResponse({"ok": True, "permissions": perms})
 
 
 @router.get("/vault/files")
 def vault_files(request: Request, q: str = "", limit: int = 50) -> JSONResponse:
     token = _token(request)
-    _require_owner(_user(token))
-    if not VAULT_DIR.is_dir():
-        return JSONResponse({"files": [], "note": "вольт не смонтирован"})
-    limit = max(1, min(limit, 100))
-    files = []
-    for path in sorted(VAULT_DIR.rglob("*.md")):
-        if ".git" in path.parts:
-            continue
-        rel = str(path.relative_to(VAULT_DIR))
-        if q and q.lower() not in rel.lower():
-            continue
-        files.append({"path": rel, "size": path.stat().st_size})
-        if len(files) >= limit:
-            break
-    return JSONResponse({"files": files})
+    user = _user(token)
+    cfg, _vtoken, uid = _user_vault(user)
+    if not cfg or not cfg.get("repo_url"):
+        return JSONResponse({"files": [], "configured": False})
+    if not user_vaults.is_ready(uid):
+        return JSONResponse({"files": [], "configured": True, "ready": False, "note": "вольт не подключён"})
+    try:
+        conn = _portal_db()
+        files = user_vaults.list_files(uid, conn, q=q, limit=limit)
+        conn.close()
+    except Exception as e:
+        raise HTTPException(500, str(e)[:200])
+    return JSONResponse({"files": files, "configured": True, "ready": True})
 
 
 @router.get("/vault/read")
 def vault_read(request: Request, path: str) -> JSONResponse:
     token = _token(request)
-    _require_owner(_user(token))
-    target = _safe_vault_path(path)
-    if not target.is_file():
+    user = _user(token)
+    cfg, _vtoken, uid = _user_vault(user)
+    if not cfg or not user_vaults.is_ready(uid):
+        raise HTTPException(409, "вольт не подключён")
+    try:
+        conn = _portal_db()
+        result = user_vaults.read_note(uid, conn, path)
+        conn.close()
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except FileNotFoundError:
         raise HTTPException(404, "файл не найден")
-    if target.suffix.lower() != ".md":
-        raise HTTPException(400, "можно читать только .md")
-    text = target.read_text(encoding="utf-8", errors="replace")
-    if len(text) > 20000:
-        text = text[:20000] + "\n…(обрезано)"
-    return JSONResponse({"path": path, "content": text})
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e)[:200])
+    content = result.get("content", "")
+    if len(content) > 30000:
+        content = content[:30000] + "\n…(обрезано)"
+        result["content"] = content
+        result["truncated"] = True
+    return JSONResponse(result)
 
 
 @router.get("/vault/search")
 def vault_search(request: Request, q: str, limit: int = 20) -> JSONResponse:
     token = _token(request)
-    _require_owner(_user(token))
+    user = _user(token)
     query = (q or "").strip()
     if not query:
         raise HTTPException(400, "нужен q")
-    limit = max(1, min(limit, 50))
-    results = []
-    # Пытаемся FTS5-индекс, иначе простой поиск по файлам.
-    if VAULT_INDEX.is_file():
-        try:
-            conn = sqlite3.connect(f"file:{VAULT_INDEX}?mode=ro", uri=True, timeout=5)
-            rows = conn.execute(
-                "SELECT path, snippet(notes, 1, '', '', ' … ', 20) FROM notes "
-                "WHERE notes MATCH ? LIMIT ?", (query, limit)).fetchall()
-            conn.close()
-            for path, snippet in rows:
-                results.append({"path": path, "snippet": snippet or ""})
-            return JSONResponse({"results": results, "engine": "fts"})
-        except sqlite3.Error:
-            pass
-    # Fallback: grep-поиск.
-    needle = query.lower()
-    for path in VAULT_DIR.rglob("*.md") if VAULT_DIR.is_dir() else []:
-        if ".git" in path.parts:
-            continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        low = text.lower()
-        idx = low.find(needle)
-        if idx == -1:
-            continue
-        start = max(0, idx - 40)
-        end = min(len(text), idx + len(query) + 80)
-        snippet = text[start:end].replace("\n", " ")
-        results.append({"path": str(path.relative_to(VAULT_DIR)), "snippet": snippet})
-        if len(results) >= limit:
-            break
-    return JSONResponse({"results": results, "engine": "scan"})
+    cfg, _vtoken, uid = _user_vault(user)
+    if not cfg or not user_vaults.is_ready(uid):
+        return JSONResponse({"results": [], "configured": bool(cfg and cfg.get("repo_url")), "ready": False})
+    try:
+        conn = _portal_db()
+        results = user_vaults.search(uid, conn, query, limit=limit)
+        conn.close()
+    except Exception as e:
+        raise HTTPException(500, str(e)[:200])
+    return JSONResponse({"results": results, "configured": True, "ready": True})
+
+
+@router.post("/vault/note")
+async def vault_note(request: Request) -> JSONResponse:
+    """Создать заметку в личном вольте с явным выбором папки (в пределах прав)."""
+    token = _token(request)
+    user = _user(token)
+    data = await request.json()
+    text = str(data.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "пустой текст")
+    title = str(data.get("title") or "").strip()
+    folder = str(data.get("folder") or "AI/Inbox").strip() or "AI/Inbox"
+    cfg, vtoken, uid = _user_vault(user)
+    if not cfg or not user_vaults.is_ready(uid):
+        raise HTTPException(409, "личный вольт не подключён")
+    try:
+        conn = _portal_db()
+        user_vaults.ensure_table(conn)
+        result = user_vaults.create_note(uid, conn, vtoken, folder, title, text)
+        conn.close()
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        msg = str(e)
+        if "x-access-token" in msg or "AUTHORIZATION" in msg.upper():
+            msg = "ошибка git-операции"
+        raise HTTPException(502, msg[:300] or "не удалось записать заметку")
+    return JSONResponse(result)
+
+
 
 # ── Напоминания (bot.db) ────────────────────────────────────────────────
 

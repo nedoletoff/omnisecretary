@@ -18,6 +18,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +34,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,11 +45,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.OwuiNote
+import ru.nedoletoff.omnisecretary.data.VaultConfig
 import ru.nedoletoff.omnisecretary.data.VaultFile
+import ru.nedoletoff.omnisecretary.data.VaultPermission
 import ru.nedoletoff.omnisecretary.data.VaultResult
 
 @Composable
@@ -183,40 +192,78 @@ private fun NoteEditor(
 @Composable
 private fun VaultTab(api: Api) {
     val scope = rememberCoroutineScope()
+    var config by remember { mutableStateOf<VaultConfig?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf("") }
+    var notice by remember { mutableStateOf("") }
+    var showConfig by remember { mutableStateOf(false) }
+
+    // браузер
     var query by remember { mutableStateOf("") }
     var files by remember { mutableStateOf<List<VaultFile>>(emptyList()) }
     var results by remember { mutableStateOf<List<VaultResult>>(emptyList()) }
     var opened by remember { mutableStateOf<Pair<String, String>?>(null) }
-    var loading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf("") }
-    var forbidden by remember { mutableStateOf(false) }
+    var browsing by remember { mutableStateOf(false) }
+
+    suspend fun loadConfig() {
+        loading = true; error = ""
+        try { config = api.vaultConfig() }
+        catch (e: Exception) { error = e.message ?: "Ошибка загрузки настроек вольта" }
+        finally { loading = false }
+    }
 
     fun loadFiles(q: String = "") {
         scope.launch {
-            loading = true; error = ""; results = emptyList()
+            browsing = true; error = ""; results = emptyList()
             try { files = api.vaultFiles(q) }
             catch (e: Exception) {
-                val msg = e.message ?: ""
-                if (msg.contains("403") || msg.contains("владельц", true)) forbidden = true
-                else error = msg.ifBlank { "Ошибка" }
-            } finally { loading = false }
+                val msg = e.message ?: "Ошибка"
+                when {
+                    msg.contains("NOT_CONFIGURED") -> { config = config?.copy(configured = false) ?: config }
+                    msg.contains("NOT_READY") -> { config = config?.copy(ready = false) ?: config }
+                    else -> error = msg
+                }
+            } finally { browsing = false }
         }
     }
+
     fun search() {
-        if (query.isBlank()) { loadFiles(); return }
+        val q = query.trim()
+        if (q.isBlank()) { loadFiles(); return }
         scope.launch {
-            loading = true; error = ""
-            try { results = api.vaultSearch(query); files = emptyList() }
-            catch (e: Exception) { error = e.message ?: "Ошибка поиска" }
-            finally { loading = false }
+            browsing = true; error = ""
+            try { results = api.vaultSearch(q); files = emptyList() }
+            catch (e: Exception) {
+                val msg = e.message ?: "Ошибка поиска"
+                when {
+                    msg.contains("NOT_CONFIGURED") -> { config = config?.copy(configured = false) ?: config }
+                    msg.contains("NOT_READY") -> { config = config?.copy(ready = false) ?: config }
+                    else -> error = msg
+                }
+            } finally { browsing = false }
         }
     }
-    LaunchedEffect(Unit) { loadFiles() }
+
+    LaunchedEffect(Unit) {
+        loadConfig()
+        val c = config
+        if (c?.configured == true && c.ready) loadFiles()
+    }
+
+    // после загрузки конфига — подгружаем файлы, если готово
+    LaunchedEffect(config?.configured, config?.ready) {
+        val c = config
+        if (c?.configured == true && c.ready && files.isEmpty() && results.isEmpty() && !browsing) {
+            loadFiles()
+        }
+    }
 
     if (opened != null) {
         Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { opened = null }) { Icon(Icons.Filled.ArrowBack, "Назад", tint = GruvboxFg) }
+                IconButton(onClick = { opened = null }) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = GruvboxFg)
+                }
                 Text(opened!!.first, style = MaterialTheme.typography.titleSmall,
                     color = GruvboxYellow, modifier = Modifier.weight(1f))
             }
@@ -226,20 +273,69 @@ private fun VaultTab(api: Api) {
         return
     }
 
+    if (showConfig || (config != null && config!!.configured.not())) {
+        VaultConfigScreen(
+            api = api,
+            initial = config,
+            onClose = { showConfig = false; scope.launch { loadConfig() } },
+            onSaved = { showConfig = false; notice = it; scope.launch { loadConfig(); loadFiles() } },
+        )
+        return
+    }
+
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Obsidian-вольт", style = MaterialTheme.typography.headlineSmall, color = GruvboxYellow)
-        if (forbidden) {
-            Text("Вольт доступен только владельцу.", color = GruvboxGray)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Obsidian-вольт", style = MaterialTheme.typography.headlineSmall,
+                color = GruvboxYellow, modifier = Modifier.weight(1f))
+            IconButton(onClick = {
+                scope.launch {
+                    notice = "Синхронизация…"
+                    try {
+                        val r = api.syncVault()
+                        notice = if (r.optBoolean("ok", true)) "Синхронизировано" else "Ошибка синхронизации"
+                        loadConfig(); loadFiles()
+                    } catch (e: Exception) { notice = e.message ?: "Ошибка синхронизации" }
+                }
+            }) { Icon(Icons.Filled.Sync, contentDescription = "Синхронизировать", tint = GruvboxBlue) }
+            IconButton(onClick = { showConfig = true }) {
+                Icon(Icons.Filled.Settings, contentDescription = "Настройки вольта", tint = GruvboxFg)
+            }
+        }
+
+        val c = config
+        if (loading) { CircularProgressIndicator(); return@Column }
+        if (c != null && c.configured && !c.ready) {
+            Text("Вольт подключён, но не готов: ${c.status}", color = GruvboxOrange)
+            if (c.lastError.isNotBlank()) Text(c.lastError, color = GruvboxRed,
+                style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = {
+                    scope.launch {
+                        notice = "Подключение…"
+                        try { api.syncVault(); loadConfig(); loadFiles(); notice = "Готово" }
+                        catch (e: Exception) { notice = e.message ?: "Ошибка" }
+                    }
+                }) { Text("Подключить / синхронизировать") }
+                TextButton(onClick = { showConfig = true }) { Text("Изменить настройки") }
+            }
+            if (notice.isNotBlank()) Text(notice, color = GruvboxAqua)
             return@Column
         }
+
+        if (notice.isNotBlank()) Text(notice, color = GruvboxAqua, style = MaterialTheme.typography.bodySmall)
         Row(verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query, { query = it }, label = { Text("Поиск") },
                 modifier = Modifier.weight(1f), singleLine = true)
-            IconButton(onClick = { search() }) { Icon(Icons.Filled.Search, "Искать", tint = GruvboxBlue) }
+            IconButton(onClick = { search() }) {
+                Icon(Icons.Filled.Search, contentDescription = "Искать", tint = GruvboxBlue)
+            }
+            IconButton(onClick = { query = ""; loadFiles() }) {
+                Icon(Icons.Filled.Refresh, contentDescription = "Обновить", tint = GruvboxFg)
+            }
         }
         if (error.isNotBlank()) Text(error, color = GruvboxRed)
-        if (loading) { CircularProgressIndicator(); return@Column }
+        if (browsing) { CircularProgressIndicator(); return@Column }
         if (results.isNotEmpty()) {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(results) { r ->
@@ -247,7 +343,7 @@ private fun VaultTab(api: Api) {
                         modifier = Modifier.fillMaxWidth().clickable {
                             scope.launch {
                                 try { opened = r.path to api.vaultRead(r.path) }
-                                catch (e: Exception) { error = e.message ?: "Не удалось открыть" }
+                                catch (e: Exception) { error = e.message ?: "Нет доступа или файл не найден" }
                             }
                         }) {
                         Column(Modifier.padding(12.dp)) {
@@ -259,13 +355,15 @@ private fun VaultTab(api: Api) {
                 }
             }
         } else {
+            if (files.isEmpty() && error.isBlank())
+                Text("Нет доступных заметок (проверьте права на папки в настройках вольта).", color = GruvboxGray)
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(files, key = { it.path }) { f ->
                     Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
                         modifier = Modifier.fillMaxWidth().clickable {
                             scope.launch {
                                 try { opened = f.path to api.vaultRead(f.path) }
-                                catch (e: Exception) { error = e.message ?: "Не удалось открыть" }
+                                catch (e: Exception) { error = e.message ?: "Нет доступа или файл не найден" }
                             }
                         }) {
                         Text(f.path, color = GruvboxFg, modifier = Modifier.padding(12.dp))
@@ -275,3 +373,182 @@ private fun VaultTab(api: Api) {
         }
     }
 }
+
+@Composable
+private fun VaultConfigScreen(
+    api: Api,
+    initial: VaultConfig?,
+    onClose: () -> Unit,
+    onSaved: (String) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var repoUrl by remember { mutableStateOf(initial?.repoUrl ?: "") }
+    var branch by remember { mutableStateOf(initial?.branch ?: "main") }
+    var token by remember { mutableStateOf("") }
+    var showToken by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf(initial?.lastError ?: "") }
+    var perms by remember {
+        mutableStateOf(
+            if (initial != null && initial.permissions.isNotEmpty()) initial.permissions
+            else defaultVaultPermissions()
+        )
+    }
+    var showPermsHelp by remember { mutableStateOf(false) }
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Назад", tint = GruvboxFg)
+            }
+            Text("Настройка Obsidian-вольта", style = MaterialTheme.typography.titleMedium,
+                color = GruvboxYellow, modifier = Modifier.weight(1f))
+        }
+
+        Text("Подключите свой приватный репозиторий GitHub. Токен хранится в зашифрованном виде на сервере и используется только для синхронизации этого вольта.",
+            color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+
+        OutlinedTextField(repoUrl, { repoUrl = it },
+            label = { Text("URL репозитория (https)") },
+            placeholder = { Text("https://github.com/user/vault.git") },
+            modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(branch, { branch = it }, label = { Text("Ветка") },
+            modifier = Modifier.fillMaxWidth(), singleLine = true)
+        OutlinedTextField(
+            token, { token = it },
+            label = { Text(if (initial?.hasToken == true) "Новый GitHub PAT (пусто — оставить текущий)" else "GitHub PAT (Contents: read/write)") },
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { showToken = !showToken }) {
+                    Icon(if (showToken) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                        contentDescription = "Показать токен", tint = GruvboxGray)
+                }
+            },
+        )
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Права доступа нейросети по папкам", color = GruvboxYellow,
+                style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = { showPermsHelp = !showPermsHelp }) { Text("?") }
+        }
+        if (showPermsHelp) {
+            Text("Права проверяются программно на сервере при каждом действии — ассистент не может их обойти. " +
+                "Укажите папки/префиксы (например AI/, Дневник/, или пусто для всего вольта). " +
+                "Для пути применяется самое точное (длинное) совпадающее правило. " +
+                "Если правило не найдено — доступ запрещён.",
+                color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+        }
+
+        perms.forEachIndexed { index, rule ->
+            Card(colors = CardDefaults.cardColors(containerColor = GruvboxBg1),
+                modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            rule.path, { v ->
+                                perms = perms.toMutableList().also { it[index] = rule.copy(path = v) }
+                            },
+                            label = { Text("Папка/префикс (пусто = весь вольт)") },
+                            modifier = Modifier.weight(1f), singleLine = true)
+                        if (perms.size > 1) {
+                            IconButton(onClick = {
+                                perms = perms.toMutableList().also { it.removeAt(index) }
+                            }) { Icon(Icons.Filled.Delete, contentDescription = "Удалить правило", tint = GruvboxRed) }
+                        }
+                    }
+                    PermissionToggles(rule) { updated ->
+                        perms = perms.toMutableList().also { it[index] = updated }
+                    }
+                }
+            }
+        }
+        TextButton(onClick = {
+            perms = perms + VaultPermission(path = "", read = true, list = true, search = true)
+        }) { Text("+ Добавить правило для папки") }
+
+        if (error.isNotBlank()) Text(error, color = GruvboxRed)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (initial?.configured == true) {
+                TextButton(onClick = {
+                    scope.launch {
+                        busy = true; error = ""
+                        try { api.disconnectVault(removeLocal = false); onSaved("Вольт отключён") }
+                        catch (e: Exception) { error = e.message ?: "Ошибка" }
+                        finally { busy = false }
+                    }
+                }, enabled = !busy) { Text("Отключить", color = GruvboxRed) }
+            }
+            TextButton(onClick = { if (repoUrl.isNotBlank()) scope.launch {
+                busy = true; error = ""
+                try {
+                    val res = api.saveVaultConfig(repoUrl.trim(), branch.trim().ifBlank { "main" },
+                        token.trim().ifBlank { null }, perms)
+                    if (res.optBoolean("ok", false) || res.optString("status") == "ready") {
+                        onSaved("Вольт подключён")
+                    } else {
+                        error = res.optString("error").ifBlank { "Не удалось подключить (проверьте URL и токен)" }
+                    }
+                } catch (e: Exception) {
+                    error = e.message ?: "Ошибка сохранения"
+                } finally { busy = false }
+            } }, enabled = !busy && repoUrl.isNotBlank()) {
+                if (busy) CircularProgressIndicator(Modifier.padding(4.dp)) else Text("Сохранить и подключить")
+            }
+        }
+
+        Text("Важно: ассистент сможет читать/писать/изменять только то, что вы явно разрешили выше. " +
+            "Запись без соответствующего права блокируется на сервере.",
+            color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun PermissionToggles(rule: VaultPermission, onChange: (VaultPermission) -> Unit) {
+    val items = listOf(
+        Triple("Чтение", "read", rule.read),
+        Triple("Список", "list", rule.list),
+        Triple("Поиск", "search", rule.search),
+        Triple("Создание", "create", rule.create),
+        Triple("Дополнение", "append", rule.append),
+        Triple("Изменение", "modify", rule.modify),
+        Triple("Удаление", "delete", rule.delete),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        items.chunked(2).forEach { rowItems ->
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                rowItems.forEach { (label, key, value) ->
+                    Row(verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)) {
+                        Switch(checked = value, onCheckedChange = { checked ->
+                            onChange(when (key) {
+                                "read" -> rule.copy(read = checked)
+                                "list" -> rule.copy(list = checked)
+                                "search" -> rule.copy(search = checked)
+                                "create" -> rule.copy(create = checked)
+                                "append" -> rule.copy(append = checked)
+                                "modify" -> rule.copy(modify = checked)
+                                "delete" -> rule.copy(delete = checked)
+                                else -> rule
+                            })
+                        })
+                        Text(label, color = GruvboxFg, style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 4.dp))
+                    }
+                }
+                if (rowItems.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+private fun defaultVaultPermissions(): List<VaultPermission> = listOf(
+    VaultPermission(path = "", read = true, list = true, search = true),
+    VaultPermission(path = "AI/", read = true, list = true, search = true,
+        create = true, append = true, modify = true, delete = false),
+)
+
