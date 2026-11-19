@@ -52,13 +52,84 @@ import java.time.format.DateTimeFormatter
 
 private enum class DialogKind { NONE, NOTE, REMINDER, EVENT, TASK }
 
+private const val TODAY_CACHE_KEY = "today_cache"
+
+private fun loadTodayCache(context: Context): TodayData? = runCatching {
+    val raw = context.getSharedPreferences("omni_cache", Context.MODE_PRIVATE)
+        .getString(TODAY_CACHE_KEY, "") ?: return null
+    if (raw.isBlank()) return null
+    val obj = org.json.JSONObject(raw)
+    fun array(name: String) = obj.optJSONArray(name) ?: org.json.JSONArray()
+    TodayData(
+        place = obj.optString("place"),
+        temperature = if (obj.isNull("temperature")) null else obj.optInt("temperature"),
+        wind = if (obj.isNull("wind")) null else obj.optInt("wind"),
+        symbol = obj.optString("symbol"),
+        events = (0 until array("events").length()).mapNotNull { i ->
+            val e = array("events").optJSONObject(i) ?: return@mapNotNull null
+            ru.nedoletoff.omnisecretary.data.TodayEvent(
+                id = e.optString("id"),
+                time = e.optString("time"),
+                title = e.optString("title"),
+                description = e.optString("description"),
+                allDay = e.optBoolean("all_day"),
+            )
+        },
+        tasks = (0 until array("tasks").length()).mapNotNull { i ->
+            val t = array("tasks").optJSONObject(i) ?: return@mapNotNull null
+            ru.nedoletoff.omnisecretary.data.TodayTask(
+                id = t.optLong("id"),
+                title = t.optString("title"),
+                due = t.optString("due"),
+            )
+        },
+        notes = (0 until array("notes").length()).mapNotNull { i ->
+            val n = array("notes").optJSONObject(i) ?: return@mapNotNull null
+            ru.nedoletoff.omnisecretary.data.TodayNote(
+                id = n.optString("id"),
+                title = n.optString("title"),
+            )
+        },
+    )
+}.getOrNull()
+
+private fun saveTodayCache(context: Context, data: TodayData) {
+    val obj = org.json.JSONObject()
+        .put("place", data.place)
+        .put("symbol", data.symbol)
+        .put("temperature", data.temperature ?: org.json.JSONObject.NULL)
+        .put("wind", data.wind ?: org.json.JSONObject.NULL)
+    val events = org.json.JSONArray()
+    data.events.forEach {
+        events.put(org.json.JSONObject()
+            .put("id", it.id).put("time", it.time).put("title", it.title)
+            .put("description", it.description).put("all_day", it.allDay))
+    }
+    obj.put("events", events)
+    val tasks = org.json.JSONArray()
+    data.tasks.forEach {
+        tasks.put(org.json.JSONObject()
+            .put("id", it.id).put("title", it.title).put("due", it.due))
+    }
+    obj.put("tasks", tasks)
+    val notes = org.json.JSONArray()
+    data.notes.forEach {
+        notes.put(org.json.JSONObject().put("id", it.id).put("title", it.title))
+    }
+    obj.put("notes", notes)
+    runCatching {
+        context.getSharedPreferences("omni_cache", Context.MODE_PRIVATE)
+            .edit().putString(TODAY_CACHE_KEY, obj.toString()).apply()
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TodayScreen(api: Api, reloadKey: Int) {
     val c = OmniPalette.colors
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var data by remember { mutableStateOf<TodayData?>(null) }
+    var data by remember { mutableStateOf<TodayData?>(loadTodayCache(context)) }
     var reminders by remember { mutableStateOf<List<ReminderItem>>(emptyList()) }
     var error by remember { mutableStateOf("") }
     var notice by remember { mutableStateOf("") }
@@ -129,10 +200,12 @@ fun TodayScreen(api: Api, reloadKey: Int) {
     }
 
     suspend fun load(showSpinner: Boolean = true) {
-        if (showSpinner) busy = true
+        if (showSpinner && data == null) busy = true
         error = ""
         try {
-            data = api.today()
+            val fresh = api.today()
+            data = fresh
+            saveTodayCache(context, fresh)
             reminders = runCatching { api.reminders() }.getOrDefault(emptyList())
             var sentNotes = 0
             var sentReminders = 0
@@ -145,7 +218,11 @@ fun TodayScreen(api: Api, reloadKey: Int) {
                 }.joinToString(", ", prefix = "Отправлено отложенных — ")
             }
         } catch (failure: Exception) {
-            error = failure.message ?: "Не удалось загрузить сводку"
+            if (data != null) {
+                notice = "Не удалось обновить — показаны сохранённые данные"
+            } else {
+                error = failure.message ?: "Не удалось загрузить сводку"
+            }
         } finally {
             busy = false
         }

@@ -2,11 +2,17 @@ package ru.nedoletoff.omnisecretary.ui
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -19,11 +25,15 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,21 +42,23 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -61,9 +73,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -104,6 +126,92 @@ private fun playWav(context: Context, bytes: ByteArray, onDone: () -> Unit = {})
         .onFailure { runCatching { player.release() }; file.delete(); onDone() }
 }
 
+private val MD_LINK = Regex("\\[([^\\]]+)\\]\\(([^)]+)\\)")
+
+private fun formatTime(timestamp: Long): String = try {
+    java.time.Instant.ofEpochMilli(timestamp)
+        .atZone(java.time.ZoneId.systemDefault())
+        .toLocalTime()
+        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
+} catch (e: Exception) {
+    ""
+}
+
+private fun AnnotatedString.Builder.appendInlineLinks(text: String, c: AppColors) {
+    var cursor = 0
+    MD_LINK.findAll(text).forEach { match ->
+        append(text.substring(cursor, match.range.first))
+        pushStringAnnotation("URL", match.groupValues[2])
+        withStyle(SpanStyle(color = c.info, textDecoration = TextDecoration.Underline)) {
+            append(match.groupValues[1])
+        }
+        pop()
+        cursor = match.range.last + 1
+    }
+    append(text.substring(cursor))
+}
+
+@Composable
+private fun RichMessage(text: String, c: AppColors) {
+    val context = LocalContext.current
+    val parts = text.split("```")
+    parts.forEachIndexed { index, part ->
+        if (index % 2 == 1) {
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = c.surface,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(8.dp)) {
+                    Text(part.trim().ifBlank { "…" }, fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp, color = c.text)
+                }
+            }
+        } else if (part.isNotBlank()) {
+            val annotated = buildAnnotatedString {
+                part.lineSequence().forEach { raw ->
+                    val line = raw.trimEnd()
+                    when {
+                        line.startsWith("#### ") -> withStyle(
+                            SpanStyle(color = c.text, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        ) { append(line.removePrefix("#### ") + "\n") }
+                        line.startsWith("### ") -> withStyle(
+                            SpanStyle(color = c.accent, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        ) { append(line.removePrefix("### ") + "\n") }
+                        line.startsWith("## ") -> withStyle(
+                            SpanStyle(color = c.accent, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        ) { append(line.removePrefix("## ") + "\n") }
+                        line.startsWith("# ") -> withStyle(
+                            SpanStyle(color = c.accent, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        ) { append(line.removePrefix("# ") + "\n") }
+                        line.startsWith("- ") || line.startsWith("* ") -> {
+                            withStyle(SpanStyle(color = c.accent)) { append("• ") }
+                            appendInlineLinks(line.removePrefix("- ").removePrefix("* "), c)
+                            append("\n")
+                        }
+                        line.startsWith("> ") -> withStyle(SpanStyle(color = c.textSecondary)) {
+                            append("▌ " + line.removePrefix("> ") + "\n")
+                        }
+                        else -> {
+                            appendInlineLinks(line, c)
+                            append("\n")
+                        }
+                    }
+                }
+            }
+            ClickableText(text = annotated,
+                style = MaterialTheme.typography.bodyMedium.copy(color = c.text),
+                onClick = { offset ->
+                    annotated.getStringAnnotations("URL", offset, offset).firstOrNull()?.let { annotation ->
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(annotation.item)))
+                        }
+                    }
+                })
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
@@ -117,9 +225,15 @@ fun ChatScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val recorder = remember { Recorder(context) }
+    val pulse = rememberInfiniteTransition(label = "recording").animateFloat(
+        initialValue = 0.35f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(650), RepeatMode.Reverse),
+        label = "pulse",
+    )
 
     var activeChatId by remember { mutableStateOf(chatId) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -169,7 +283,8 @@ fun ChatScreen(
     }
 
     LaunchedEffect(chatId) {
-        if (chatId.isNotBlank() && messages.isEmpty()) {
+        messages = emptyList()
+        if (chatId.isNotBlank()) {
             runCatching { api.messages(chatId) }.onSuccess { messages = it }
         }
     }
@@ -226,7 +341,6 @@ fun ChatScreen(
         val uri = cameraUri
         if (ok && uri != null) uploadAndAttach(uri, "image/jpeg")
     }
-
     suspend fun recognizeText(uri: Uri): String = withContext(Dispatchers.IO) {
         val image = InputImage.fromFilePath(context, uri)
         suspendCancellableCoroutine { cont ->
@@ -259,7 +373,7 @@ fun ChatScreen(
         }
     }
 
-    fun launchCamera() {
+    fun takePictureForReal() {
         try {
             val dir = File(context.cacheDir, "camera").apply { mkdirs() }
             val file = File(dir, "photo-${System.currentTimeMillis()}.jpg")
@@ -269,6 +383,21 @@ fun ChatScreen(
             takePicture.launch(uri)
         } catch (e: Exception) {
             notice = "Камера недоступна: ${e.message ?: "ошибка"}"
+        }
+    }
+
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) takePictureForReal()
+        else notice = "Разрешите доступ к камере в настройках приложения"
+    }
+
+    fun launchCamera() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            takePictureForReal()
+        } else {
+            cameraPermission.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -329,6 +458,10 @@ fun ChatScreen(
                     current[current.lastIndex] = last.copy(content = last.content + delta)
                     messages = current
                 }, files = files)
+                // Перечитаем историю, чтобы у локальных сообщений появились
+                // настоящие id Open WebUI — иначе следующий запрос даст 409.
+                runCatching { api.messages(activeChatId) }
+                    .onSuccess { stored -> if (stored.size >= messages.size) messages = stored }
                 if (handsFree && answer.isNotBlank()) speakAndMaybeListen(answer)
             } catch (failure: Exception) {
                 notice = failure.message ?: "Ошибка ответа"
@@ -370,7 +503,11 @@ fun ChatScreen(
 
     fun speakLast() {
         val text = messages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
-            ?.content ?: return
+            ?.content
+        if (text == null) {
+            notice = "Нет ответа для озвучки"
+            return
+        }
         speakAndMaybeListen(text)
     }
 
@@ -412,12 +549,6 @@ fun ChatScreen(
                         Icon(Icons.Filled.Apps, contentDescription = "Действия на устройстве",
                             tint = c.action)
                     }
-                    IconToggleButton(checked = handsFree,
-                        onCheckedChange = { handsFree = it }) {
-                        Icon(Icons.Filled.Mic,
-                            contentDescription = "Диалог без рук",
-                            tint = if (handsFree) c.success else c.textSecondary)
-                    }
                     IconButton(onClick = { speakLast() }) {
                         Icon(Icons.Filled.VolumeUp, contentDescription = "Озвучить")
                     }
@@ -431,7 +562,37 @@ fun ChatScreen(
         },
         containerColor = c.background,
         bottomBar = {
-            Column(Modifier.background(c.surface).imePadding().padding(8.dp)) {
+            Column(
+                Modifier.background(c.surface).imePadding().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (recording) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Box(
+                            Modifier.size(10.dp).graphicsLayer(alpha = pulse.value)
+                                .background(c.danger, CircleShape)
+                        )
+                        Text("Слушаю… запись идёт локально, отправлю после остановки",
+                            color = c.danger, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                FilterChip(
+                    selected = handsFree,
+                    onClick = { handsFree = !handsFree },
+                    label = {
+                        Text(if (handsFree) "Живой диалог: вкл" else "Живой диалог: выкл",
+                            style = MaterialTheme.typography.labelSmall)
+                    },
+                    leadingIcon = {
+                        Icon(Icons.Filled.Mic, contentDescription = null,
+                            Modifier.size(14.dp),
+                            tint = if (handsFree) c.success else c.textSecondary)
+                    },
+                )
                 if (notice.isNotBlank()) {
                     Text(notice, color = c.textSecondary,
                         style = MaterialTheme.typography.bodySmall,
@@ -463,7 +624,10 @@ fun ChatScreen(
                             modifier = Modifier.size(24.dp),
                         )
                     }
-                    IconButton(onClick = { pickFile.launch(arrayOf("*/*")) }, enabled = !uploading) {
+                    IconButton(onClick = {
+                        notice = "Выберите файл в системном диалоге"
+                        pickFile.launch(arrayOf("*/*"))
+                    }, enabled = !uploading) {
                         Icon(Icons.Filled.AttachFile, contentDescription = "Вложить файл",
                             tint = c.action)
                     }
@@ -507,20 +671,71 @@ fun ChatScreen(
         ) {
             itemsIndexed(messages) { _, message ->
                 val isUser = message.role == "user"
-                Box(Modifier.fillMaxWidth()) {
-                    Text(
-                        text = message.content.ifBlank { "…" },
-                        color = if (isUser) c.onAccent else c.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = if (isUser) TextAlign.End else TextAlign.Start,
-                        modifier = Modifier
-                            .align(if (isUser) Alignment.CenterEnd else Alignment.CenterStart)
-                            .background(
-                                if (isUser) c.accent else c.surface,
-                                RoundedCornerShape(12.dp))
-                            .padding(12.dp)
-                            .fillMaxWidth(0.9f),
-                    )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    if (!isUser) {
+                        Box(
+                            Modifier.size(28.dp).padding(end = 4.dp)
+                                .background(c.accent, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("O", color = c.onAccent,
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                    Column(
+                        Modifier.widthIn(max = 340.dp).fillMaxWidth(0.88f),
+                        horizontalAlignment = if (isUser) Alignment.End else Alignment.Start,
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+                        ) {
+                            Text(if (isUser) "Вы" else "OmniSecretary",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = c.textSecondary)
+                            Text(" · ${formatTime(message.timestamp)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = c.textSecondary)
+                            IconButton(
+                                onClick = {
+                                    clipboard.setText(AnnotatedString(message.content))
+                                    notice = "Сообщение скопировано"
+                                },
+                                modifier = Modifier.size(20.dp),
+                            ) {
+                                Icon(Icons.Filled.ContentCopy, "Копировать сообщение",
+                                    Modifier.size(13.dp), tint = c.textSecondary)
+                            }
+                        }
+                        Surface(
+                            color = if (isUser) c.accent else c.surface,
+                            shape = RoundedCornerShape(
+                                topStart = 14.dp, topEnd = 14.dp,
+                                bottomStart = if (isUser) 14.dp else 4.dp,
+                                bottomEnd = if (isUser) 4.dp else 14.dp,
+                            ),
+                            tonalElevation = if (isUser) 0.dp else 1.dp,
+                        ) {
+                            SelectionContainer(Modifier.padding(12.dp)) {
+                                RichMessage(message.content.ifBlank { "…" }, c)
+                            }
+                        }
+                    }
+                    if (isUser) {
+                        Box(
+                            Modifier.size(28.dp).padding(start = 4.dp)
+                                .background(c.info, CircleShape),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("Я", color = c.onAccent,
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                 }
             }
         }

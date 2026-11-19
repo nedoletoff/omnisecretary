@@ -12,7 +12,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 data class ChatSummary(val id: String, val title: String, val updated: Long)
-data class ChatMessage(val role: String, val content: String, val timestamp: Long)
+data class ChatMessage(val role: String, val content: String, val timestamp: Long, val id: String = "")
 data class ModelInfo(val id: String, val name: String, val description: String)
 data class TodayEvent(
     val id: String,
@@ -148,22 +148,44 @@ class Api(private val server: String, private val token: String = "") {
     suspend fun messages(chatId: String): List<ChatMessage> = withContext(Dispatchers.IO) {
         val body = call("/api/v1/chats/$chatId")
         val chat = body.optJSONObject("chat") ?: body
-        val map = chat.optJSONObject("messages") ?: JSONObject()
-        map.keys().asSequence().mapNotNull { key ->
-            val item = map.optJSONObject(key) ?: return@mapNotNull null
-            val content = item.opt("content")
-            val text = when (content) {
-                is String -> content
-                is JSONArray -> content.optString(0)
-                else -> ""
+        val result = mutableListOf<ChatMessage>()
+        when (val raw = chat.opt("messages")) {
+            is JSONObject -> {
+                raw.keys().asSequence().forEach { key ->
+                    val item = raw.optJSONObject(key) ?: return@forEach
+                    val text = messageText(item.opt("content"))
+                    if (text.isNotBlank()) {
+                        result.add(ChatMessage(
+                            role = item.optString("role", "user"),
+                            content = text,
+                            timestamp = item.optLong("timestamp"),
+                            id = key,
+                        ))
+                    }
+                }
             }
-            if (text.isBlank()) null
-            else ChatMessage(
-                role = item.optString("role", "user"),
-                content = text,
-                timestamp = item.optLong("timestamp"),
-            )
-        }.sortedBy { it.timestamp }.toList()
+            is JSONArray -> {
+                for (i in 0 until raw.length()) {
+                    val item = raw.optJSONObject(i) ?: continue
+                    val text = messageText(item.opt("content"))
+                    if (text.isNotBlank()) {
+                        result.add(ChatMessage(
+                            role = item.optString("role", "user"),
+                            content = text,
+                            timestamp = item.optLong("timestamp"),
+                            id = item.optString("id", "$chatId-$i"),
+                        ))
+                    }
+                }
+            }
+        }
+        result.sortedBy { it.timestamp }
+    }
+
+    private fun messageText(content: Any?): String = when (content) {
+        is String -> content
+        is JSONArray -> content.optString(0)
+        else -> ""
     }
 
     suspend fun models(): List<Pair<String, String>> = withContext(Dispatchers.IO) {
@@ -227,7 +249,20 @@ class Api(private val server: String, private val token: String = "") {
         history.forEach {
             messages.put(JSONObject().put("role", it.role).put("content", it.content))
         }
-        val userMsg = JSONObject().put("role", "user").put("content", prompt)
+        // Open WebUI 0.13.x требует явные уникальные id сообщений, иначе
+        // InsertChatTurn возвращает 409 «Message already exists».
+        val userMessageId = java.util.UUID.randomUUID().toString()
+        val assistantId = java.util.UUID.randomUUID().toString()
+        val userMsg = JSONObject()
+            .put("id", userMessageId)
+            .put("role", "user")
+            .put("content", prompt)
+            .put("timestamp", System.currentTimeMillis() / 1000)
+        // У локально добавленных сообщений id пустой: отправлять его нельзя,
+        // иначе Open WebUI отдаёт 409 «invalid ID».
+        history.lastOrNull { it.id.isNotBlank() }?.id?.let {
+            userMsg.put("parentId", it)
+        }
         if (files.isNotEmpty()) {
             val arr = JSONArray()
             files.forEach { f ->
@@ -246,6 +281,9 @@ class Api(private val server: String, private val token: String = "") {
             .put("model", model)
             .put("messages", messages)
             .put("stream", true)
+            .put("user_message", userMsg)
+            .put("message_ids", JSONArray().put(
+                JSONObject().put("model_id", model).put("message_id", assistantId)))
         val response = client.newCall(request("/api/chat/completions", "POST", payload).build())
             .execute()
         if (!response.isSuccessful) {
