@@ -552,3 +552,29 @@ private fun TaskEditDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
 }
+
+@Composable
+private fun EventEditDialog(
+    event: ru.nedoletoff.omnisecretary.data.TodayEvent,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var title by remember { mutableStateOf(event.title) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Редактировать событие") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(title, { title = it }, label = { Text("Название") },
+                    singleLine = true)
+                Text("Изменение времени пока недоступно (можно удалить и создать заново).",
+                    color = GruvboxGray, style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { if (title.isNotBlank()) onSave(title.trim()) },
+                enabled = title.isNotBlank()) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
