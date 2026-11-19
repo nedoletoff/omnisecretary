@@ -141,12 +141,24 @@ private fun OwuiNotesTab(api: Api) {
                 Icon(Icons.Filled.Refresh, "Обновить", tint = c.action)
             }
             IconButton(onClick = { creating = true }) {
-                Icon(Icons.Filled.Add, "Новая", tint = c.success)
+                Icon(Icons.Filled.Add, "Новая заметка", tint = c.success)
             }
         }
+        Text("Заметки Open WebUI — хранятся на вашем сервере и доступны в веб-интерфейсе. Нажмите на заметку, чтобы открыть и изменить.",
+            color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
         if (error.isNotBlank()) Text(error, color = c.danger)
         if (loading) { CircularProgressIndicator(); return@Column }
-        if (notes.isEmpty()) { Text("Нет заметок", color = c.textSecondary); return@Column }
+        if (notes.isEmpty()) {
+            Card(colors = CardDefaults.cardColors(containerColor = c.surface),
+                modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Пока нет заметок", color = c.text)
+                    Text("Нажмите «+», чтобы создать первую заметку. Она сохранится на сервере.",
+                        color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            return@Column
+        }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(notes, key = { it.id }) { note ->
                 Card(colors = CardDefaults.cardColors(containerColor = c.surface),
@@ -156,9 +168,11 @@ private fun OwuiNotesTab(api: Api) {
                             catch (e: Exception) { error = e.message ?: "Не удалось открыть" }
                         }
                     }) {
-                    Column(Modifier.padding(16.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(note.title.ifBlank { "Без названия" }, color = c.text,
                             style = MaterialTheme.typography.titleMedium)
+                        Text("Нажмите, чтобы открыть", color = c.textSecondary,
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
@@ -303,6 +317,8 @@ private fun VaultTab(api: Api) {
                 Icon(Icons.Filled.Settings, contentDescription = "Настройки вольта", tint = c.text)
             }
         }
+        Text("Ваш личный Obsidian-вольт в GitHub. Просмотр, поиск и права доступа настраиваются здесь; записи создаются с коммитом в разрешённые папки.",
+            color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
 
         val cfg = config
         if (loading) { CircularProgressIndicator(); return@Column }

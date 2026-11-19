@@ -229,12 +229,14 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         Card(colors = CardDefaults.cardColors(containerColor = c.surface),
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Быстро добавить", color = c.accent,
+                Text("Быстрые действия", color = c.accent,
                     style = MaterialTheme.typography.titleMedium)
+                Text("Создавайте записи прямо отсюда. Подробный календарь — во вкладке «Календарь», заметки — во вкладке «Заметки».",
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AssistChip(onClick = { dialog = DialogKind.NOTE },
-                        label = { Text("Заметка") },
+                        label = { Text("Заметка в Obsidian") },
                         leadingIcon = { Icon(Icons.Filled.NoteAdd, null) })
                     AssistChip(onClick = { dialog = DialogKind.REMINDER },
                         label = { Text("Напоминание") },
@@ -253,9 +255,10 @@ fun TodayScreen(api: Api, reloadKey: Int) {
         Card(colors = CardDefaults.cardColors(containerColor = c.surface),
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("События", color = c.accent, style = MaterialTheme.typography.titleMedium)
+                Text("События сегодня", color = c.accent, style = MaterialTheme.typography.titleMedium)
                 if (today.events.isEmpty()) {
-                    Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("На сегодня событий нет. Добавьте событие кнопкой выше или во вкладке «Календарь».",
+                        color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 } else {
                     today.events.forEach { event ->
                         EventRow(event,
@@ -276,8 +279,11 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Задачи", color = c.accent, style = MaterialTheme.typography.titleMedium)
+                Text("Задачи из Vikunja. Можно отметить выполненной, изменить или удалить.",
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 if (today.tasks.isEmpty()) {
-                    Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("Активных задач нет. Нажмите «Задача», чтобы создать.",
+                        color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 } else {
                     today.tasks.forEach { task ->
                         TaskRow(task,
@@ -289,7 +295,8 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             }
         }
 
-        Section("Заметки", today.notes.map { it.title })
+        Section("Недавние заметки", today.notes.map { it.title },
+            "Короткий список заметок. Создание, редактирование и поиск — во вкладке «Заметки».")
 
         // Напоминания
         Card(colors = CardDefaults.cardColors(containerColor = c.surface),
@@ -297,8 +304,11 @@ fun TodayScreen(api: Api, reloadKey: Int) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("Напоминания", color = c.accent,
                     style = MaterialTheme.typography.titleMedium)
+                Text("Локальные напоминания и (при включении) уведомления в Telegram.",
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 if (reminders.isEmpty()) {
-                    Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+                    Text("Нет запланированных напоминаний.",
+                        color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
                 } else {
                     reminders.forEach { r ->
                         Row(Modifier.fillMaxWidth(),
@@ -310,7 +320,7 @@ fun TodayScreen(api: Api, reloadKey: Int) {
                             }
                             TextButton(onClick = {
                                 runAction { api.deleteReminder(r.id); "Напоминание удалено" }
-                            }) { Text("×", color = c.danger) }
+                            }) { Text("Удалить", color = c.danger) }
                         }
                     }
                 }
@@ -405,16 +415,19 @@ fun TodayScreen(api: Api, reloadKey: Int) {
 }
 
 @Composable
-private fun Section(title: String, lines: List<String>) {
+private fun Section(title: String, lines: List<String>, hint: String = "") {
     val c = OmniPalette.colors
     Card(colors = CardDefaults.cardColors(containerColor = c.surface),
         modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, color = c.accent, style = MaterialTheme.typography.titleMedium)
+            if (hint.isNotBlank()) {
+                Text(hint, color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+            }
             if (lines.isEmpty()) {
-                Text("Пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("Пока пусто", color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
             } else {
-                lines.forEach { Text(it, color = c.text) }
+                lines.forEach { Text("• $it", color = c.text) }
             }
         }
     }
