@@ -1,4 +1,4 @@
-/* OmniSecretary — единая тема Gruvbox для Open WebUI и портала. */
+/* OmniSecretary — максимально полное перекрытие темы Open WebUI. */
 :root {
   --omni-bg: #282828;
   --omni-bg0: #1d2021;
@@ -6,20 +6,31 @@
   --omni-bg2: #3c3836;
   --omni-fg: #ebdbb2;
   --omni-fg-dim: #a89984;
-  --omni-red: #fb4934;
-  --omni-green: #b8bb26;
   --omni-yellow: #fabd2f;
   --omni-blue: #83a598;
+  --omni-red: #fb4934;
+  --omni-green: #b8bb26;
   --omni-purple: #d3869b;
-  --omni-aqua: #8ec07c;
-  --omni-orange: #fe8019;
 
+  /* Переменные, которые использует Open WebUI/Svelte. */
   --color-bg: var(--omni-bg) !important;
   --color-fg: var(--omni-fg) !important;
   --color-surface: var(--omni-bg1) !important;
   --color-border: var(--omni-bg2) !important;
   --color-primary: var(--omni-yellow) !important;
   --color-muted: var(--omni-fg-dim) !important;
+  --color-bg-1: var(--omni-bg0) !important;
+  --color-bg-2: var(--omni-bg1) !important;
+  --color-gray-50: var(--omni-bg) !important;
+  --color-gray-100: var(--omni-bg) !important;
+  --color-gray-200: var(--omni-bg1) !important;
+  --color-gray-300: var(--omni-bg1) !important;
+  --color-gray-400: var(--omni-fg-dim) !important;
+  --color-gray-500: var(--omni-fg-dim) !important;
+  --color-gray-600: var(--omni-bg2) !important;
+  --color-gray-700: var(--omni-bg2) !important;
+  --color-gray-800: var(--omni-bg0) !important;
+  --color-gray-900: var(--omni-bg0) !important;
 }
 
 html, body, #app, [data-sveltekit-preload-data] {
@@ -27,14 +38,33 @@ html, body, #app, [data-sveltekit-preload-data] {
   color: var(--omni-fg) !important;
 }
 
-body, button, input, textarea, select {
-  font-family: "Noto Sans", system-ui, -apple-system, sans-serif !important;
+/* ПерекрываемTailwind-классы фона/текста/грамницы. */
+body [class*="bg-gray-"],
+body [class*="bg-zinc-"],
+body [class*="bg-neutral-"],
+body [class*="bg-slate-"],
+body [class*="bg-white"],
+body [class*="bg-black"] {
+  background-color: var(--omni-bg) !important;
+}
+body [class*="text-gray-"],
+body [class*="text-zinc-"],
+body [class*="text-neutral-"],
+body [class*="text-slate-"],
+body [class*="text-white"],
+body [class*="text-black"] {
+  color: var(--omni-fg) !important;
+}
+body [class*="border-gray-"],
+body [class*="border-zinc-"],
+body [class*="border-neutral-"],
+body [class*="border-slate-"],
+body [class*="border-white"],
+body [class*="border-black"] {
+  border-color: var(--omni-bg2) !important;
 }
 
-a { color: var(--omni-blue) !important; }
-a:hover { color: var(--omni-yellow) !important; }
-
-/* Боковое меню: интегрированные пункты OmniSecretary. */
+/* Боковое меню OmniSecretary */
 .omni-sidebar-menu {
   margin: 8px 10px 14px !important;
   padding: 10px !important;
@@ -58,6 +88,7 @@ a:hover { color: var(--omni-yellow) !important; }
   color: var(--omni-fg) !important;
   text-decoration: none !important;
   font-size: 13px !important;
+  background: transparent !important;
 }
 .omni-sidebar-link:hover {
   background: var(--omni-bg2) !important;
@@ -65,7 +96,7 @@ a:hover { color: var(--omni-yellow) !important; }
 }
 .omni-logo-img { width: 28px !important; height: 28px !important; }
 
-/* Блоки кода — тёмный Gruvbox, без светлых вкраплений. */
+/* Блоки кода */
 pre, pre *, code, code *, [class*="language-"], [class*="language-"] * {
   background: var(--omni-bg0) !important;
   color: var(--omni-fg) !important;
@@ -76,7 +107,6 @@ pre {
   border: 1px solid var(--omni-bg2) !important;
   border-radius: 10px !important;
   overflow-x: auto !important;
-  box-shadow: inset 0 1px 0 rgba(250,189,47,.12) !important;
 }
 :not(pre) > code {
   padding: 2px 6px !important;

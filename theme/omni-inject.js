@@ -1,4 +1,4 @@
-/* OmniSecretary: внедрение в боковое меню и замена логотипа Open WebUI. */
+/* OmniSecretary: надёжное внедрение в Open WebUI (меню и логотип). */
 (function () {
   'use strict';
 
@@ -10,25 +10,36 @@
     ['/portal/tasks', 'Задачи'],
     ['/portal/notes', 'Заметки'],
     ['/portal/obsidian', 'Obsidian'],
-    ['/portal/obsidian-setup', 'Obsidian: настройка'],
+    ['/portal/obsidian-setup', 'Obsidian ⚙'],
     ['/portal/search', 'Поиск'],
     ['/portal/llm', 'Модели и ключи'],
+    ['/portal/account', 'Настройки портала'],
     ['/#/settings', 'Настройки Open WebUI']
   ];
 
+  function rect(el) { return el.getBoundingClientRect(); }
+
   function findSidebar() {
-    var nodes = Array.prototype.slice.call(document.querySelectorAll(
-      'nav, aside, [class*="sidebar"], [class*="Sidebar"], [id*="sidebar"], [aria-label*="Sidebar"]'
-    ));
-    var visible = nodes.filter(function (el) {
-      var r = el.getBoundingClientRect();
-      return r.width > 100 && r.height > 200;
+    var candidates = [];
+    var all = document.querySelectorAll('nav, aside, div, section');
+    for (var i = 0; i < all.length; i++) {
+      var el = all[i];
+      var r = rect(el);
+      if (r.width < 140 || r.height < 220) continue;
+      var text = (el.innerText || '').slice(0, 800);
+      var cls = (el.className && el.className.toString()) + ' ' + (el.id || '');
+      var score = 0;
+      if (/sidebar|side.?bar/i.test(cls)) score += 5;
+      if (/new chat|чат|chats/i.test(text)) score += 4;
+      if (/calendar|календарь/i.test(text)) score += 2;
+      if (/settings|настройки/i.test(text)) score += 1;
+      if (score >= 4) candidates.push({ el: el, score: score, height: r.height });
+    }
+    if (!candidates.length) return null;
+    candidates.sort(function (a, b) {
+      return (b.score - a.score) || (b.height - a.height);
     });
-    if (!visible.length) return null;
-    visible.sort(function (a, b) {
-      return b.getBoundingClientRect().height - a.getBoundingClientRect().height;
-    });
-    return visible[0];
+    return candidates[0].el;
   }
 
   function buildMenu() {
@@ -46,29 +57,35 @@
   function injectMenu() {
     var nav = findSidebar();
     if (!nav || nav.querySelector('.omni-sidebar-menu')) return;
-    var menu = buildMenu();
-    nav.insertBefore(menu, nav.firstChild);
+    nav.insertBefore(buildMenu(), nav.firstChild);
   }
 
   function replaceLogo() {
     Array.prototype.slice.call(document.querySelectorAll('img')).forEach(function (img) {
-      var src = (img.getAttribute('src') || '') + ' ' + (img.getAttribute('alt') || '');
-      if (/logo|open.?webui|favicon/i.test(src)) {
+      var hint = (img.getAttribute('src') || '') + ' ' + (img.getAttribute('alt') || '');
+      if (/logo|open.?webui|favicon/i.test(hint)) {
         img.setAttribute('src', LOGO);
         img.setAttribute('alt', 'OmniSecretary');
       }
     });
+
     Array.prototype.slice.call(document.querySelectorAll('svg')).forEach(function (svg) {
+      var r = rect(svg);
+      if (r.width < 16 || r.height < 16 || r.width > 120 || r.height > 120) return;
       var p = svg.parentElement;
-      if (!p) return;
-      var hint = (p.className && p.className.toString()) + ' ' + (p.id || '');
-      if (/logo|brand|header/i.test(hint) && svg.width > 16) {
-        var img = document.createElement('img');
-        img.src = LOGO;
-        img.alt = 'OmniSecretary';
-        img.className = 'omni-logo-img';
-        svg.parentNode.replaceChild(img, svg);
+      var hint = '';
+      for (var depth = 0; p && depth < 4; depth++, p = p.parentElement) {
+        hint += ' ' + ((p.className && p.className.toString()) || '') + ' ' + (p.id || '') + ' ' + (p.getAttribute('aria-label') || '');
       }
+      var textHint = (svg.parentElement && svg.parentElement.innerText || '').slice(0, 120);
+      if (!/logo|brand|header|sidebar|open.?webui/i.test(hint) && !/open.?webui/i.test(textHint)) return;
+      var img = document.createElement('img');
+      img.src = LOGO;
+      img.alt = 'OmniSecretary';
+      img.className = 'omni-logo-img';
+      img.style.width = Math.min(32, Math.max(20, r.width)) + 'px';
+      img.style.height = Math.min(32, Math.max(20, r.height)) + 'px';
+      svg.parentNode.replaceChild(img, svg);
     });
   }
 
@@ -79,10 +96,14 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     apply();
-    setTimeout(apply, 400);
-    setTimeout(apply, 1500);
+    setTimeout(apply, 300);
+    setTimeout(apply, 1200);
+    setTimeout(apply, 3000);
   });
 
-  var observer = new MutationObserver(function () { apply(); });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  if (document.body) {
+    new MutationObserver(function () { apply(); }).observe(document.body, {
+      childList: true, subtree: true
+    });
+  }
 })();
