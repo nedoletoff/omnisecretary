@@ -314,11 +314,7 @@ a:hover {{ text-decoration:underline; }}
 </style></head><body{" class=\"wide\"" if wide else ""}>
 <div class="shell">
   <section class="brand">
-    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
-      <rect x="3" y="3" width="58" height="58" rx="17" fill="#3c3836" stroke="#fabd2f" stroke-width="2"/>
-      <path d="M17 20h30a4 4 0 0 1 4 4v17a4 4 0 0 1-4 4H33l-10 7v-7h-6a4 4 0 0 1-4-4V24a4 4 0 0 1 4-4z" fill="#fabd2f"/>
-      <circle cx="25" cy="32" r="2.5" fill="#282828"/><circle cx="32" cy="32" r="2.5" fill="#282828"/><circle cx="39" cy="32" r="2.5" fill="#282828"/>
-    </svg>
+    <img class="mark" src="/omni-logo.svg" alt="OmniSecretary" width="64" height="64">
     <h2><b>Omni</b>Secretary</h2>
     <p>Ваш собственный ассистент: чат, календарь, задачи, заметки и голос — в одном месте.</p>
     <span class="chip">self-hosted · приватный</span>
@@ -1531,7 +1527,7 @@ def calendar_page(request: Request, y: int = 0, m: int = 0, d: int = 0,
         cls = "day"
         if day.month != month:
             cls += " muted"
-        if day.date() == today.date():
+        if day == today:
             cls += " today"
         evs = by_day.get(key, [])
         dots = "".join('<div class="ev"><span class="dot"></span>' + esc(x.get("title",""))[:18] + '</div>' for x in evs[:2])
