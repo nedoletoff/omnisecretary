@@ -450,7 +450,9 @@ fun ChatScreen(
                 if (activeChatId.isBlank()) activeChatId = api.newChat(temporary)
                 var answer = ""
                 val sendText = if (text.isNotBlank()) text else "Опиши вложение."
-                api.stream(activeChatId, Session.model, history, sendText, onDelta = delta@{ delta ->
+                val currentParent = runCatching { api.parentId(activeChatId) }.getOrNull()
+                api.stream(activeChatId, Session.model, history, sendText,
+                    parentId = currentParent, onDelta = delta@{ delta ->
                     answer += delta
                     val current = messages.toMutableList()
                     val last = current.lastOrNull() ?: return@delta

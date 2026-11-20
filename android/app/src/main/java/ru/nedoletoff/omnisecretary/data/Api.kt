@@ -145,6 +145,13 @@ class Api(private val server: String, private val token: String = "") {
         Unit
     }
 
+    /** ID последнего сообщения активной ветки — нужен как parentId следующего запроса. */
+    suspend fun parentId(chatId: String): String? = withContext(Dispatchers.IO) {
+        val body = call("/api/v1/chats/$chatId")
+        val chat = body.optJSONObject("chat") ?: body
+        chat.optJSONObject("history")?.optString("currentId")?.ifBlank { null }
+    }
+
     suspend fun messages(chatId: String): List<ChatMessage> = withContext(Dispatchers.IO) {
         val body = call("/api/v1/chats/$chatId")
         val chat = body.optJSONObject("chat") ?: body
@@ -251,6 +258,7 @@ class Api(private val server: String, private val token: String = "") {
         prompt: String,
         onDelta: (String) -> Unit,
         files: List<UploadedFile> = emptyList(),
+        parentId: String? = null,
     ): String = withContext(Dispatchers.IO) {
         val messages = JSONArray()
         history.forEach {
@@ -265,11 +273,12 @@ class Api(private val server: String, private val token: String = "") {
             .put("role", "user")
             .put("content", prompt)
             .put("timestamp", System.currentTimeMillis() / 1000)
-        // У локально добавленных сообщений id пустой: отправлять его нельзя,
-        // иначе Open WebUI отдаёт 409 «invalid ID».
-        history.lastOrNull { it.id.isNotBlank() }?.id?.let {
-            userMsg.put("parentId", it)
-        }
+        // parentId — это currentId активной ветки в Open WebUI.
+        // Брать последнее сообщение по времени нельзя: в разветвлённой истории
+        // оно может быть из другой ветки, и сервер вернёт 409.
+        val parent = parentId?.ifBlank { null }
+            ?: history.lastOrNull { it.id.isNotBlank() }?.id
+        parent?.let { userMsg.put("parentId", it) }
         if (files.isNotEmpty()) {
             val arr = JSONArray()
             files.forEach { f ->
