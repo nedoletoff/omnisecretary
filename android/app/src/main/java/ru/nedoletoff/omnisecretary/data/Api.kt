@@ -149,10 +149,17 @@ class Api(private val server: String, private val token: String = "") {
         val body = call("/api/v1/chats/$chatId")
         val chat = body.optJSONObject("chat") ?: body
         val result = mutableListOf<ChatMessage>()
-        when (val raw = chat.opt("messages")) {
+        // В Open WebUI 0.13.x настоящая история с id лежит в chat.history.messages
+        // (объект). Поле chat.messages — только превью без id; использовать его
+        // как историю нельзя: следующий запрос упадёт с HTTP 409.
+        val history = chat.optJSONObject("history")
+        val stored = history?.opt("messages")
+            ?: chat.opt("messages")
+            ?: JSONObject()
+        when (stored) {
             is JSONObject -> {
-                raw.keys().asSequence().forEach { key ->
-                    val item = raw.optJSONObject(key) ?: return@forEach
+                stored.keys().asSequence().forEach { key ->
+                    val item = stored.optJSONObject(key) ?: return@forEach
                     val text = messageText(item.opt("content"))
                     if (text.isNotBlank()) {
                         result.add(ChatMessage(
@@ -165,15 +172,15 @@ class Api(private val server: String, private val token: String = "") {
                 }
             }
             is JSONArray -> {
-                for (i in 0 until raw.length()) {
-                    val item = raw.optJSONObject(i) ?: continue
+                for (i in 0 until stored.length()) {
+                    val item = stored.optJSONObject(i) ?: continue
                     val text = messageText(item.opt("content"))
                     if (text.isNotBlank()) {
                         result.add(ChatMessage(
                             role = item.optString("role", "user"),
                             content = text,
                             timestamp = item.optLong("timestamp"),
-                            id = item.optString("id", "$chatId-$i"),
+                            id = if (item.has("id")) item.optString("id") else "",
                         ))
                     }
                 }

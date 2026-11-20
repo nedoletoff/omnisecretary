@@ -2,7 +2,7 @@ SHELL := /bin/bash
 
 # Дополнительные профили compose (через пробел), например: voice proactive telegram ntfy
 # Пусто = только базовый стек (без telegram/voice/proactive/ntfy).
-COMPOSE_PROFILES ?= $(shell grep -E '^COMPOSE_PROFILES=' .env 2>/dev/null | cut -d= -f2- | tr ',' ' ')
+COMPOSE_PROFILES ?= $(shell grep -E '^COMPOSE_PROFILES=' .env 2>/dev/null | cut -d= -f2- | tr -d '"' | tr ',' ' ')
 PROFILE_FLAGS := $(foreach p,$(strip $(COMPOSE_PROFILES)),--profile $(p))
 COMPOSE := docker compose --project-directory . -f docker-compose.yml --env-file .env $(PROFILE_FLAGS)
 

@@ -39,6 +39,7 @@ services:
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - ./nginx/certs:/etc/nginx/certs:ro
       - ./nginx/www:/var/www/certbot:ro
+      - ./theme:/var/www/omni-theme:ro
       # Сертификаты Let's Encrypt (выпуск/продление — scripts/renew-certs.sh).
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
