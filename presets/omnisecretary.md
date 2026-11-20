@@ -7,7 +7,7 @@ citations: false
 web_search: true
 code_interpreter: false
 vision: false
-tools: vikunja, files, vault
+tools: vikunja, files, vault, omni_services, omni_research
 function_calling: legacy
 ---
 

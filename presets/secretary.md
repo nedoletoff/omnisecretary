@@ -8,7 +8,7 @@ web_search: true
 code_interpreter: false
 vision: false
 function_calling: legacy
-tools: vikunja, files
+tools: vikunja, files, omni_services, omni_research
 ---
 
 Ты — OmniSecretary, личный секретарь владельца. Работаешь на его Raspberry Pi,

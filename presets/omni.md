@@ -8,7 +8,7 @@ web_search: true
 code_interpreter: false
 vision: false
 function_calling: legacy
-tools: vikunja, files, vault
+tools: vikunja, files, vault, omni_services, omni_research
 ---
 
 Ты — Omni, универсальный AI-ассистент владельца OmniSecretary. У тебя есть

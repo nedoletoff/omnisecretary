@@ -8,7 +8,7 @@ web_search: true
 code_interpreter: false
 vision: false
 function_calling: legacy
-tools: vault
+tools: vault, omni_services, omni_research
 ---
 
 Ты — Archivist, хранитель Obsidian-вольта владельца. Твоя задача — находить

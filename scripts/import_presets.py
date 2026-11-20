@@ -97,15 +97,20 @@ def parse_preset(path: Path) -> dict:
     # legacy включает RAG-поиск (features.web_search) для моделей без tool calling
     if "function_calling" in meta:
         params["function_calling"] = meta["function_calling"]
+    # Режим вдумчивого разбора: прокидываем в OpenAI-совместимый payload.
+    if "reasoning_effort" in meta:
+        params["reasoning_effort"] = meta["reasoning_effort"]
 
     # tools: vikunja, files → meta.toolIds = ["server:mcp:vikunja", ...]
     # Пустое значение означает «без инструментов» (приватный режим).
     tools_raw = str(meta.get("tools", "") or "").strip()
-    tool_ids = [
-        f"server:mcp:{name.strip()}"
-        for name in tools_raw.split(",")
-        if name.strip()
-    ]
+    tool_ids = []
+    for name in tools_raw.split(","):
+        name = name.strip()
+        if not name:
+            continue
+        # Локальные инструменты регистрируются без префикса server:mcp:.
+        tool_ids.append(name if name.startswith("omni_") else f"server:mcp:{name}")
 
     return {
         "id": meta["id"],

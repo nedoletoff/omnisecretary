@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -1084,3 +1085,54 @@ async def mobile_update_task(task_id: str, request: Request):
                 continue
             raise
     raise HTTPException(400, "обновление задачи не поддерживается")
+
+
+@router.post("/research")
+async def mobile_research(request: Request):
+    """Многошаговый поиск для инструмента «Исследование».
+
+    Использует встроенный web search Open WebUI от имени пользователя:
+    настройки движка/глубины задаёт администратор на /portal/search.
+    """
+    token = _token(request)
+    _user(token)
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "ожидается JSON")
+    topic = str(body.get("topic") or "").strip()[:200]
+    queries = [str(q).strip()[:300] for q in (body.get("queries") or []) if str(q).strip()]
+    if not queries:
+        raise HTTPException(400, "нужен хотя бы один поисковый запрос")
+    queries = queries[:6]
+
+    async def one(query: str):
+        async with httpx.AsyncClient(timeout=90) as client:
+            response = await client.post(
+                f"{OWUI_URL}/api/v1/retrieval/process/web/search",
+                json={"queries": [query]},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if response.status_code != 200:
+                return []
+            return response.json() if isinstance(response.json(), list) else []
+
+    groups = await asyncio.gather(*(one(q) for q in queries), return_exceptions=True)
+    seen, lines = set(), [f"# {topic or 'Исследование'}"]
+    for group in groups:
+        if isinstance(group, BaseException):
+            continue
+        for item in group:
+            if not isinstance(item, dict):
+                continue
+            link = str(item.get("link") or "").strip()
+            if not link or link in seen:
+                continue
+            seen.add(link)
+            title = str(item.get("title") or link).strip()
+            snippet = " ".join(str(item.get("snippet") or "").split())[:350]
+            lines.append(f"- [{title}]({link}) — {snippet}")
+    if len(lines) == 1:
+        return {"report": "По запросам ничего не найдено. Попробуйте другие формулировки."}
+    lines += ["", f"Источников: {len(seen)}. Запросов: {len(queries)}."]
+    return {"report": "\n".join(lines[:60])}

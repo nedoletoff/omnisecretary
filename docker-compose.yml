@@ -198,6 +198,8 @@ services:
       # Модели с capabilities.web_search=true получают поиск в чате.
       ENABLE_WEB_SEARCH: "true"
       WEB_SEARCH_ENGINE: ${WEB_SEARCH_ENGINE:-duckduckgo}
+      # lite-бэкенд DDG стабильнее и релевантнее, чем auto на этом канале.
+      DDGS_BACKEND: ${DDGS_BACKEND:-lite}
       WEB_SEARCH_RESULT_COUNT: "3"
       WEB_SEARCH_CONCURRENT_REQUESTS: "1"
       WEB_SEARCH_TRUST_ENV: "false"

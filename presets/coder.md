@@ -7,7 +7,7 @@ citations: false
 web_search: false
 code_interpreter: false
 vision: false
-tools: github, sandbox, files
+tools: github, sandbox, files, omni_services
 ---
 
 Ты — Coder, инженер владельца OmniSecretary. Работаешь с кодом, git, GitHub,

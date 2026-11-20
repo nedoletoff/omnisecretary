@@ -1328,6 +1328,115 @@ def admin_control_model_save(
     return RedirectResponse("/portal/admin/control?message=Модель+обновлена", status_code=303)
 
 
+# ── Поиск в интернете ────────────────────────────────────────────────────
+
+WEBUI_KEY_FILE = Path(os.environ.get(
+    "WEBUI_API_KEY_FILE", "/secrets/webui-api-key.txt"))
+
+SEARCH_FIELDS = {
+    "WEB_SEARCH_ENGINE": "Движок",
+    "DDGS_BACKEND": "Бэкенд DuckDuckGo (auto/lite/html)",
+    "WEB_SEARCH_RESULT_COUNT": "Число результатов",
+    "WEB_SEARCH_CONCURRENT_REQUESTS": "Параллельные запросы",
+    "WEB_SEARCH_DOMAIN_FILTER_LIST": "Фильтр доменов (JSON)",
+    "BYPASS_WEB_SEARCH_WEB_LOADER": "Только сниппеты",
+    "WEB_FETCH_MAX_CONTENT_LENGTH": "Лимит текста страницы",
+    "TAVILY_SEARCH_DEPTH": "Глубина Tavily",
+    "PERPLEXITY_SEARCH_CONTEXT_USAGE": "Контекст Perplexity",
+}
+
+
+def _owui_call(path: str, body: dict | None = None) -> dict:
+    key = WEBUI_KEY_FILE.read_text().split("=", 1)[-1].strip()
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        f"http://open-webui:8080{path}", data=data,
+        method="POST" if data else "GET",
+        headers={"Authorization": f"Bearer {key}",
+                 "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as response:
+        return json.load(response)
+
+
+def _search_config() -> dict:
+    current = _owui_call("/api/v1/retrieval/config")
+    # Open WebUI отдаёт web-настройки вложенным объектом.
+    web = current.get("web", current)
+    return {k: web.get(k, "") for k in SEARCH_FIELDS}
+
+
+@app.get("/search", response_class=HTMLResponse)
+def search_page(request: Request, message: str = ""):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    cfg = _search_config()
+    options = "".join(
+        f'<option value="{v}"{" selected" if str(cfg["WEB_SEARCH_ENGINE"]) == v else ""}>{label}</option>'
+        for v, label in [
+            ("duckduckgo", "DuckDuckGo (лёгкий)"),
+            ("brave", "Brave"), ("tavily", "Tavily"),
+            ("searxng", "SearXNG"), ("mojeek", "Mojeek"),
+            ("bing", "Bing"), ("youcom", "You.com"),
+            ("perplexity", "Perplexity"),
+        ])
+    rows = "".join(
+        f'<label>{esc(label)}<input name="{k}" value="{esc(str(cfg.get(k, "")))}"></label>'
+        for k, label in SEARCH_FIELDS.items() if k != "WEB_SEARCH_ENGINE")
+    notice = f'<p class="ok">{esc(message)}</p>' if message else ""
+    body = f"""
+<h1>Поиск в интернете</h1>
+{notice}
+<p class="sub">Настройки общие для всех моделей Open WebUI. Для чистых источников используйте
+  <b>DuckDuckGo</b> с бэкендом <code>lite</code> или <b>Mojeek</b>. Слишком большой лимит текста
+  забивает контекст и замедляет ответ.</p>
+<form method="post" action="/portal/search">
+  <input type="hidden" name="csrf" value="{csrf_token()}">
+  <label>Движок<select name="WEB_SEARCH_ENGINE">{options}</select></label>
+  {rows}
+  <div class="actions">
+    <button class="btn primary" type="submit">Сохранить</button>
+    <button class="btn" type="submit" name="test" value="1">Проверить поиск</button>
+  </div>
+</form>
+<p class="sub">После сохранения обновите страницу чата (Ctrl+Shift+R).</p>
+"""
+    return ws_page("Поиск", body, session, "search")
+
+
+@app.post("/search")
+async def search_save(request: Request):
+    session = read_session(request)
+    if not session:
+        return RedirectResponse("/portal/login", status_code=303)
+    form = await request.form()
+    if form.get("csrf") != csrf_token():
+        return RedirectResponse("/portal/search?error=1", status_code=303)
+    update = {}
+    for key in SEARCH_FIELDS:
+        value = str(form.get(key, "")).strip()
+        if key in ("WEB_SEARCH_RESULT_COUNT", "WEB_SEARCH_CONCURRENT_REQUESTS",
+                   "WEB_FETCH_MAX_CONTENT_LENGTH"):
+            value = int(value or 0)
+        elif key.endswith("LIST"):
+            value = json.loads(value or "[]")
+        elif key.startswith("BYPASS"):
+            value = value.lower() in ("1", "true", "on", "да")
+        update[key] = value
+    # Open WebUI принимает web-настройки только вложенным объектом web.
+    _owui_call("/api/v1/retrieval/config/update", {"web": update})
+    # Запрос «тест поиска» в DDG возвращает мусор — используем стабильный эталон.
+    if form.get("test"):
+        test = _owui_call("/api/v1/retrieval/process/web/search",
+                          {"queries": ["Raspberry Pi 5 official specifications"]})
+        count = len(test.get("items", [])) if isinstance(test, dict) else 0
+        msg = f"Настройки сохранены. Тест: найдено {count} результатов."
+    else:
+        msg = "Настройки поиска сохранены"
+    return RedirectResponse("/portal/search?message=" + urllib.parse.quote(msg),
+                            status_code=303)
+
+
 # ── Рабочее пространство (календарь, задачи, заметки, Obsidian) ─────────
 
 VIKUNJA_URL = os.environ.get("VIKUNJA_BASE_URL", "http://vikunja:3456").rstrip("/")
@@ -1341,6 +1450,7 @@ def _nav(active: str, session: dict) -> str:
         ("tasks", "/portal/tasks", "Задачи"),
         ("notes", "/portal/notes", "Заметки"),
         ("obsidian", "/portal/obsidian", "Obsidian"),
+        ("search", "/portal/search", "Поиск"),
     ]
     parts = []
     for key, href, label in items:
@@ -1415,7 +1525,15 @@ a { color:var(--blue); }
 .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--yellow); margin-right:4px; }
 .ev { font-size:12px; margin-top:4px; color:var(--fg2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 ul { padding-left:18px; } li { margin:4px 0; }
-pre { white-space:pre-wrap; }
+/* Блоки кода: единая тёмная палитра без белых подложек highlighter. */
+:is(pre,code,pre *,code *) { background:transparent !important; }
+:is(pre,code) { color:#ebdbb2; font-family:"Noto Sans Mono",ui-monospace,monospace; font-size:.9em; }
+:not(pre) > code { padding:2px 6px; border:1px solid var(--bg2); border-radius:6px;
+  background:var(--bg0) !important; }
+pre { white-space:pre; padding:12px 14px; overflow-x:auto; border:1px solid var(--bg2);
+  border-radius:10px; background:var(--bg0) !important; }
+pre code { display:block; padding:0; border:0; }
+pre ::selection { background:var(--bg3); color:#fbf1c7; }
 </style></head><body>
 """ + nav + """
 <main class="wrap">""" + notice + body + """</main>
@@ -1842,3 +1960,83 @@ from mobile_api import router as mobile_router  # noqa: E402
 app.include_router(mobile_router)
 
 
+
+
+@app.get("/portal/obsidian-setup")
+def portal_obsidian_setup(request: Request):
+    """Форма подключения персонального Obsidian-вольта."""
+    sess = session(request) if callable(globals().get("session")) else None
+    if not sess:
+        return RedirectResponse("/portal/login", status_code=303)
+    user = sess.get("user") if isinstance(sess.get("user"), dict) else {}
+    uid = str(sess.get("id") or sess.get("user_id") or user.get("id") or "me")
+    cfg_path = Path("/srv/omnisecretary/vaults") / uid / "portal-config.json"
+    try:
+        cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
+    except Exception:
+        cfg = {}
+    def v(key):
+        val = cfg.get(key, "")
+        return esc(str(val)) if callable(globals().get("esc")) else str(val)
+    repo, branch, token = v("repo"), v("branch") or "main", v("token")
+    perms = cfg.get("permissions") or {}
+    perm_rows = ""
+    for path, flags in perms.items():
+        boxes = "".join(
+            '<label><input type="checkbox" name="perm_' + esc(str(path)) + '_' + k + '"' + (' checked' if flags.get(k) else '') + '>' + k + '</label>'
+            for k in ["read", "list", "search", "create", "append", "update", "delete"]
+        )
+        perm_rows += '<div class="perm-row"><b>' + esc(str(path)) + '</b>' + boxes + '</div>'
+    body = """
+    <h1>Настройка Obsidian-вольта</h1>
+    <p class="muted">Подключите свой приватный репозиторий и ключ GitHub. Права проверяются сервером при каждом действии.</p>
+    <form method="post" action="/portal/obsidian-setup" class="card">
+      <label>URL репозитория<input name="repo" value="__REPO__" placeholder="https://github.com/user/vault" required></label>
+      <label>Ветка<input name="branch" value="__BRANCH__"></label>
+      <label>GitHub PAT<input name="token" type="password" value="__TOKEN__" placeholder="ghp_..."></label>
+      <h2>Права по папкам</h2>
+      __PERMS__
+      <label>Новая папка<input name="new_path" placeholder="AI/"></label>
+      <label>Права для новой папки (через запятую)<input name="new_perms" value="read,list,search,create,append"></label>
+      <button type="submit">Сохранить и подключить</button>
+    </form>
+    """.replace("__REPO__", repo).replace("__BRANCH__", branch).replace("__TOKEN__", token).replace("__PERMS__", perm_rows)
+    if callable(globals().get("page")):
+        return page("Obsidian — настройка", body, request)
+    return HTMLResponse("<html><body>" + body + "</body></html>")
+
+
+@app.post("/portal/obsidian-setup")
+async def portal_obsidian_setup_save(request: Request):
+    sess = session(request) if callable(globals().get("session")) else None
+    if not sess:
+        return RedirectResponse("/portal/login", status_code=303)
+    user = sess.get("user") if isinstance(sess.get("user"), dict) else {}
+    uid = str(sess.get("id") or sess.get("user_id") or user.get("id") or "me")
+    form = await request.form()
+    cfg_path = Path("/srv/omnisecretary/vaults") / uid / "portal-config.json"
+    cfg_path.parent.mkdir(parents=True, exist_ok=True)
+    cfg = {
+        "repo": str(form.get("repo", "")).strip(),
+        "branch": str(form.get("branch", "main")).strip() or "main",
+        "token": str(form.get("token", "")).strip(),
+        "permissions": {},
+    }
+    new_path = str(form.get("new_path", "")).strip()
+    new_perms = str(form.get("new_perms", "")).split(",")
+    if new_path:
+        cfg["permissions"][new_path] = {k.strip(): True for k in new_perms if k.strip()}
+    for key, value in form.multi_items():
+        if key.startswith("perm_"):
+            parts = key.split("_")
+            if len(parts) >= 3:
+                flag = parts[-1]
+                path = "_".join(parts[1:-1])
+                if value:
+                    cfg["permissions"].setdefault(path, {})[flag] = True
+    cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2))
+    try:
+        cfg_path.chmod(0o600)
+    except Exception:
+        pass
+    return RedirectResponse("/portal/obsidian?saved=1", status_code=303)
