@@ -1,6 +1,5 @@
 package ru.nedoletoff.omnisecretary.data
 
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -456,28 +455,6 @@ class Api(private val server: String, private val token: String = "") {
                 error(if (detail.isNotBlank()) detail else "HTTP ${response.code}")
             }
             response.body?.bytes() ?: ByteArray(0)
-        }
-    }
-
-    /** Список голосов для конкретного движка (используется в настройках TTS). */
-    suspend fun voices(engine: String): List<String> = withContext(Dispatchers.IO) {
-        try {
-            val encoded = java.net.URLEncoder.encode(engine, "UTF-8")
-            val array = call("/api/m/voices?engine=$encoded").optJSONArray("voices") ?: JSONArray()
-            (0 until array.length()).mapNotNull { i ->
-                when (val item = array.opt(i)) {
-                    is String -> item.takeIf { it.isNotBlank() }
-                    is JSONObject -> item.optString("name")
-                        .ifBlank { item.optString("id") }
-                        .ifBlank { item.optString("voice") }
-                        .takeIf { it.isNotBlank() }
-                    else -> null
-                }
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            emptyList()
         }
     }
 

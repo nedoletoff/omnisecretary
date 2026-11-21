@@ -97,6 +97,16 @@ import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.ChatMessage
 import ru.nedoletoff.omnisecretary.data.Session
 import ru.nedoletoff.omnisecretary.data.UploadedFile
+import ru.nedoletoff.omnisecretary.data.safeAssistantModel
+import ru.nedoletoff.omnisecretary.data.safeAssistantVoice
+import ru.nedoletoff.omnisecretary.data.safeSttEngine
+import ru.nedoletoff.omnisecretary.data.safeSttLanguage
+import ru.nedoletoff.omnisecretary.data.safeSttModel
+import ru.nedoletoff.omnisecretary.data.safeTtsEngine
+import ru.nedoletoff.omnisecretary.data.safeTtsFormat
+import ru.nedoletoff.omnisecretary.data.safeTtsLanguage
+import ru.nedoletoff.omnisecretary.data.safeTtsModel
+import ru.nedoletoff.omnisecretary.data.safeTtsVoice
 import ru.nedoletoff.omnisecretary.device.DeviceActions
 import ru.nedoletoff.omnisecretary.voice.Recorder
 import java.io.File
@@ -264,11 +274,11 @@ fun ChatScreen(
                 // Голос TTS-персоны ассистента, с fallback на общие настройки.
                 val bytes = api.speak(
                     text,
-                    voice = Session.chatVoice,
-                    engine = Session.voiceTtsEngine,
-                    model = Session.chatVoiceModel,
-                    language = Session.voiceTtsLanguage,
-                    responseFormat = Session.voiceTtsFormat,
+                    voice = Session.safeAssistantVoice ?: Session.safeTtsVoice,
+                    engine = Session.safeTtsEngine,
+                    model = Session.safeAssistantModel ?: Session.safeTtsModel,
+                    language = Session.safeTtsLanguage,
+                    responseFormat = Session.safeTtsFormat,
                 )
                 withContext(Dispatchers.Main) {
                     playWav(context, bytes) {
@@ -494,9 +504,9 @@ fun ChatScreen(
                 try {
                     val text = api.transcribe(
                         bytes,
-                        engine = Session.voiceSttEngine,
-                        model = Session.voiceSttModel,
-                        language = Session.voiceSttLanguage,
+                        engine = Session.safeSttEngine,
+                        model = Session.safeSttModel,
+                        language = Session.safeSttLanguage,
                     )
                     if (text.isBlank()) notice = "Речь не распознана"
                     else if (handsFree) send(text) else input = text

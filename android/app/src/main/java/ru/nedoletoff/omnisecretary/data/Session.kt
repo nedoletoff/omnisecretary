@@ -88,31 +88,33 @@ object Session {
 
     // ── Голосовые настройки (обычные SharedPreferences, не токены) ──
 
-    private fun voiceValue(key: String, default: String): String? {
-        if (!::voicePrefs.isInitialized) return default.ifBlank { null }
-        return voicePrefs.getString(key, default)?.ifBlank { null }
+    // Пустая строка означает «не задано»; в null её превращают safe-свойства из Extension.kt.
+    private fun voiceValue(key: String, default: String = ""): String {
+        if (!::voicePrefs.isInitialized) return default
+        return voicePrefs.getString(key, default) ?: default
     }
 
     private fun saveVoice(key: String, value: String) {
         if (::voicePrefs.isInitialized) voicePrefs.edit().putString(key, value).apply()
     }
 
-    val voiceSttEngine: String? get() = voiceValue("voice_stt_engine", DEFAULT_STT_ENGINE)
-    val voiceSttModel: String? get() = voiceValue("voice_stt_model", DEFAULT_STT_MODEL)
-    val voiceSttLanguage: String? get() = voiceValue("voice_stt_language", "")
+    val voiceSttEngine: String get() = voiceValue("voice_stt_engine", DEFAULT_STT_ENGINE)
+    val voiceSttModel: String get() = voiceValue("voice_stt_model", DEFAULT_STT_MODEL)
+    val voiceSttLanguage: String get() = voiceValue("voice_stt_language")
 
-    val voiceTtsEngine: String? get() = voiceValue("voice_tts_engine", DEFAULT_TTS_ENGINE)
-    val voiceTtsModel: String? get() = voiceValue("voice_tts_model", "")
-    val voiceTtsVoice: String? get() = voiceValue("voice_tts_voice", DEFAULT_TTS_VOICE)
-    val voiceTtsLanguage: String? get() = voiceValue("voice_tts_language", "")
-    val voiceTtsFormat: String? get() = voiceValue("voice_tts_format", "")
+    val voiceTtsEngine: String get() = voiceValue("voice_tts_engine", DEFAULT_TTS_ENGINE)
+    val voiceTtsModel: String get() = voiceValue("voice_tts_model")
+    val voiceTtsVoice: String get() = voiceValue("voice_tts_voice", DEFAULT_TTS_VOICE)
+    val voiceTtsLanguage: String get() = voiceValue("voice_tts_language")
+    val voiceTtsFormat: String get() = voiceValue("voice_tts_format")
 
-    val voiceAssistantVoice: String? get() = voiceValue("voice_assistant_voice", "")
-    val voiceAssistantModel: String? get() = voiceValue("voice_assistant_model", "")
+    val voiceAssistantVoice: String get() = voiceValue("voice_assistant_voice")
+    val voiceAssistantModel: String get() = voiceValue("voice_assistant_model")
+    val voiceAssistantStyle: String get() = voiceValue("voice_assistant_style")
 
     /** Голос и модель TTS-персоны ассистента в чате с fallback на общие настройки. */
-    val chatVoice: String? get() = voiceAssistantVoice ?: voiceTtsVoice
-    val chatVoiceModel: String? get() = voiceAssistantModel ?: voiceTtsModel
+    val chatVoice: String get() = voiceAssistantVoice.ifBlank { voiceTtsVoice }
+    val chatVoiceModel: String get() = voiceAssistantModel.ifBlank { voiceTtsModel }
 
     fun setVoiceSttEngine(value: String) = saveVoice("voice_stt_engine", value)
     fun setVoiceSttModel(value: String) = saveVoice("voice_stt_model", value)
@@ -124,6 +126,7 @@ object Session {
     fun setVoiceTtsFormat(value: String) = saveVoice("voice_tts_format", value)
     fun setVoiceAssistantVoice(value: String) = saveVoice("voice_assistant_voice", value)
     fun setVoiceAssistantModel(value: String) = saveVoice("voice_assistant_model", value)
+    fun setVoiceAssistantStyle(value: String) = saveVoice("voice_assistant_style", value)
 
     fun clear() {
         token = ""
