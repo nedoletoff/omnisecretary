@@ -1,5 +1,7 @@
 package ru.nedoletoff.omnisecretary.ui
 
+import android.content.Context
+import android.media.MediaPlayer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,6 +14,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenu
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -22,15 +29,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import ru.nedoletoff.omnisecretary.data.Api
 import ru.nedoletoff.omnisecretary.data.ModelInfo
 import ru.nedoletoff.omnisecretary.data.Session
+import ru.nedoletoff.omnisecretary.data.VoiceSettings
+import java.io.File
+
+/** Голоса по умолчанию, если сервер не вернул справочник. */
+private val DEFAULT_VOICES = listOf("aidar", "baya", "kseniya", "xenia", "eugene", "neural")
 
 @Composable
 fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> Unit = {}) {
@@ -58,7 +72,34 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
         mutableStateOf(prefs.getString("ntfy_topic", "") ?: "")
     }
     var themeMode by remember { mutableStateOf(Session.themeMode) }
+    val scope = rememberCoroutineScope()
+
+    // Голосовые настройки читаются один раз при открытии экрана.
+    val initialVoice = remember { VoiceSettings.load(context) }
+    var sttEngine by remember { mutableStateOf(initialVoice.sttEngine) }
+    var sttModel by remember { mutableStateOf(initialVoice.sttModel) }
+    var sttLanguage by remember { mutableStateOf(initialVoice.sttLanguage) }
+    var ttsEngine by remember { mutableStateOf(initialVoice.ttsEngine) }
+    var ttsModel by remember { mutableStateOf(initialVoice.ttsModel) }
+    var ttsVoice by remember { mutableStateOf(initialVoice.ttsVoice) }
+    var ttsLanguage by remember { mutableStateOf(initialVoice.ttsLanguage) }
+    var ttsFormat by remember { mutableStateOf(initialVoice.ttsFormat) }
+    var assistantVoice by remember { mutableStateOf(initialVoice.assistantVoice) }
+    var assistantModel by remember { mutableStateOf(initialVoice.assistantModel) }
+    var assistantStyle by remember { mutableStateOf(initialVoice.assistantStyle) }
+    var availableVoices by remember { mutableStateOf<List<String>>(emptyList()) }
+    var voiceMessage by remember { mutableStateOf("") }
+    var voiceTesting by remember { mutableStateOf(false) }
     val c = OmniPalette.colors
+
+    // Голоса берём с сервера; при недоступности показываем встроенный список.
+    LaunchedEffect(Unit) {
+        runCatching { api.voices() }
+            .onSuccess { catalog ->
+                availableVoices = catalog.voices.ifEmpty { DEFAULT_VOICES }
+            }
+            .onFailure { availableVoices = DEFAULT_VOICES }
+    }
 
     LaunchedEffect(Unit) {
         runCatching { api.modelDetails() }.onSuccess { models = it }
@@ -253,6 +294,116 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
         }
 
         Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Голос", color = c.accent)
+                Text(
+                    "Распознавание и озвучка. Локальный режим работает на Pi, " +
+                        "облачный — через API, настроенный на сервере.",
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+
+                Text("Распознавание речи (STT)", color = c.text)
+                EngineDropdown(
+                    "Движок распознавания", sttEngine,
+                    listOf("local" to "Локальный (Pi / Vosk)", "cloud" to "Облачный API"),
+                    { sttEngine = it }, c)
+                OutlinedTextField(sttModel, { sttModel = it },
+                    label = { Text("Модель распознавания") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(sttLanguage, { sttLanguage = it },
+                    label = { Text("Язык распознавания (например, ru)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+
+                HorizontalDivider(color = c.surfaceAlt)
+                Text("Озвучка (TTS)", color = c.text)
+                EngineDropdown(
+                    "Движок озвучки", ttsEngine,
+                    listOf("local" to "Локальный Silero/Piper", "cloud" to "Облачный API"),
+                    { ttsEngine = it }, c)
+                VoiceField(ttsVoice, { ttsVoice = it }, availableVoices, c)
+                OutlinedTextField(ttsModel, { ttsModel = it },
+                    label = { Text("Модель озвучки") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(ttsLanguage, { ttsLanguage = it },
+                    label = { Text("Язык озвучки (например, ru)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                EngineDropdown("Формат ответа", ttsFormat,
+                    listOf("wav" to "WAV", "mp3" to "MP3"), { ttsFormat = it }, c)
+
+                HorizontalDivider(color = c.surfaceAlt)
+                Text("Голос нейронки", color = c.text)
+                Text("TTS-персона ассистента: её голос и модель/стиль озвучки в чате. " +
+                        "Пустые значения — использовать общие настройки TTS.",
+                    color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+                VoiceField(assistantVoice, { assistantVoice = it }, availableVoices, c,
+                    label = "Голос ассистента (пусто — как общий TTS)")
+                OutlinedTextField(assistantModel, { assistantModel = it },
+                    label = { Text("Модель озвучки ассистента (пусто — как общий TTS)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(assistantStyle, { assistantStyle = it },
+                    label = { Text("Описание персоны (стиль)") }, minLines = 3,
+                    modifier = Modifier.fillMaxWidth())
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        VoiceSettings(
+                            sttEngine = sttEngine,
+                            sttModel = sttModel,
+                            sttLanguage = sttLanguage,
+                            ttsEngine = ttsEngine,
+                            ttsModel = ttsModel,
+                            ttsVoice = ttsVoice,
+                            ttsLanguage = ttsLanguage,
+                            ttsFormat = ttsFormat,
+                            assistantVoice = assistantVoice,
+                            assistantModel = assistantModel,
+                            assistantStyle = assistantStyle,
+                        ).save(context)
+                        voiceMessage = "Голосовые настройки сохранены"
+                    }, modifier = Modifier.weight(1f)) {
+                        Text("Сохранить")
+                    }
+                    Button(onClick = {
+                        voiceTesting = true
+                        voiceMessage = "Запрашиваю озвучку…"
+                        scope.launch {
+                            try {
+                                val bytes = api.speak(
+                                    "Проверка голоса",
+                                    voice = ttsVoice.ifBlank { null },
+                                    engine = ttsEngine.ifBlank { null },
+                                    model = ttsModel.ifBlank { null },
+                                    language = ttsLanguage.ifBlank { null },
+                                    responseFormat = ttsFormat.ifBlank { null },
+                                )
+                                playVoicePreview(
+                                    context, bytes,
+                                    if (ttsFormat.equals("mp3", true)) "mp3" else "wav",
+                                    onDone = {
+                                        voiceTesting = false
+                                        voiceMessage = "Голос сгенерирован и воспроизведён"
+                                    },
+                                    onError = { message ->
+                                        voiceTesting = false
+                                        voiceMessage = message
+                                    },
+                                )
+                            } catch (e: Exception) {
+                                voiceTesting = false
+                                voiceMessage = "Ошибка: ${e.message ?: "неизвестная"}"
+                            }
+                        }
+                    }, modifier = Modifier.weight(1f), enabled = !voiceTesting) {
+                        Text(if (voiceTesting) "Проверяю…" else "Проверить голос")
+                    }
+                }
+                if (voiceMessage.isNotBlank()) {
+                    Text(voiceMessage, color = c.textSecondary,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = c.surface)) {
             Column(Modifier.padding(16.dp)) {
                 Text("Устройство", color = c.accent)
                 when {
@@ -275,5 +426,114 @@ fun SettingsScreen(api: Api, onLogout: () -> Unit, onThemeChanged: (String) -> U
         }
         Text("OmniSecretary · self-hosted, данные на вашем Pi",
             color = c.textSecondary, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+/** Выпадающий список с фиксированными вариантами (движок, формат). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EngineDropdown(
+    label: String,
+    value: String,
+    options: List<Pair<String, String>>,
+    onChange: (String) -> Unit,
+    c: AppColors,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = options.firstOrNull { it.first == value }?.second ?: value,
+            onValueChange = {},
+            readOnly = true,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { (id, title) ->
+                DropdownMenuItem(
+                    text = { Text(title, color = c.text) },
+                    onClick = { onChange(id); expanded = false },
+                )
+            }
+        }
+    }
+}
+
+/** Голос: подсказки с сервера плюс произвольный ввод. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun VoiceField(
+    value: String,
+    onChange: (String) -> Unit,
+    suggestions: List<String>,
+    c: AppColors,
+    label: String = "Голос (из списка или вручную)",
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val matches = suggestions.filter { it.contains(value, ignoreCase = true) }
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            label = { Text(label) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().menuAnchor(),
+        )
+        if (matches.isNotEmpty()) {
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                matches.forEach { name ->
+                    DropdownMenuItem(
+                        text = { Text(name, color = c.text) },
+                        onClick = { onChange(name); expanded = false },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Небольшой плеер для проверки голоса: временный файл удаляется после игры. */
+private fun playVoicePreview(
+    context: Context,
+    bytes: ByteArray,
+    extension: String,
+    onDone: () -> Unit,
+    onError: (String) -> Unit,
+) {
+    if (bytes.isEmpty()) {
+        onError("Сервер вернул пустой аудиофайл")
+        return
+    }
+    val file = try {
+        File.createTempFile("voice-test-", ".$extension", context.cacheDir)
+    } catch (e: Exception) {
+        onError("Не удалось создать временный файл: ${e.message ?: "ошибка"}")
+        return
+    }
+    val player = MediaPlayer()
+    fun cleanup() {
+        runCatching { player.release() }
+        runCatching { file.delete() }
+    }
+    player.setOnCompletionListener {
+        cleanup()
+        onDone()
+    }
+    player.setOnErrorListener { _, what, _ ->
+        cleanup()
+        onError("Не удалось воспроизвести звук (код $what)")
+        true
+    }
+    runCatching {
+        file.writeBytes(bytes)
+        player.setDataSource(file.absolutePath)
+        player.prepare()
+        player.start()
+    }.onFailure { failure ->
+        cleanup()
+        onError(failure.message ?: "Не удалось воспроизвести звук")
     }
 }

@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import wave
+import io
+import os
 import json
 import os
 import sqlite3
@@ -23,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, Form
 from fastapi.responses import JSONResponse, Response
 
 import vaults as user_vaults
@@ -32,6 +35,13 @@ OWUI_URL = os.environ.get("OWUI_URL", "http://open-webui:8080").rstrip("/")
 SECRETS_DIR = Path(os.environ.get("SECRETS_DIR", "/secrets"))
 BOT_DB_PATH = Path(os.environ.get("BOT_DB_PATH", "/bot/bot.db"))
 STATUS_FILE = Path(os.environ.get("STATUS_FILE", "/status/device.json"))
+# Облачные OpenAI-совместимые голосовые API (опционально).
+CLOUD_STT_URL = os.environ.get("CLOUD_STT_URL", "")
+CLOUD_STT_KEY = os.environ.get("CLOUD_STT_KEY", "")
+CLOUD_STT_MODEL = os.environ.get("CLOUD_STT_MODEL", "whisper-1")
+CLOUD_TTS_URL = os.environ.get("CLOUD_TTS_URL", "")
+CLOUD_TTS_KEY = os.environ.get("CLOUD_TTS_KEY", "")
+CLOUD_TTS_MODEL = os.environ.get("CLOUD_TTS_MODEL", "gpt-4o-mini-tts")
 STT_URL = os.environ.get("STT_URL", "http://stt:8000").rstrip("/")
 TTS_URL = os.environ.get("TTS_URL", "http://tts:8000").rstrip("/")
 VAULT_URL = os.environ.get("VAULT_MANAGER_URL", "http://vault-manager:8000").rstrip("/")
@@ -299,8 +309,43 @@ def today(request: Request) -> JSONResponse:
     return JSONResponse(_today_data(token))
 
 
+@router.get("/voices")
+def voices(request: Request, engine: str = "local") -> JSONResponse:
+    """Список голосов: локальный TTS или облачный, если он настроен."""
+    token = _token(request)
+    _user(token)
+    if engine == "cloud":
+        if not CLOUD_TTS_URL or not CLOUD_TTS_KEY:
+            return JSONResponse({"detail": "облачный TTS не настроен"}, status_code=503)
+        try:
+            with httpx.Client(timeout=30) as cloud_client:
+                cloud_resp = cloud_client.get(
+                    CLOUD_TTS_URL.rstrip("/") + "/audio/voices",
+                    headers={"Authorization": f"Bearer {CLOUD_TTS_KEY}"},
+                )
+        except httpx.HTTPError:
+            return JSONResponse({"detail": "облачный TTS недоступен"}, status_code=503)
+        if cloud_resp.status_code >= 400:
+            return JSONResponse({"detail": "ошибка облачного TTS"}, status_code=502)
+        return JSONResponse(cloud_resp.json())
+    try:
+        with httpx.Client(timeout=30) as client:
+            response = client.get(f"{TTS_URL}/v1/audio/voices")
+    except httpx.HTTPError:
+        raise HTTPException(503, "список голосов недоступен")
+    if response.status_code != 200:
+        raise HTTPException(502, "ошибка получения списка голосов")
+    return JSONResponse(response.json())
+
+
 @router.post("/voice")
-async def voice(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+async def voice(
+    request: Request,
+    file: UploadFile = File(...),
+    engine: str = Form("local"),
+    model: str = Form(""),
+    language: str = Form("ru"),
+) -> JSONResponse:
     token = _token(request)
     _user(token)
     raw = await file.read()
@@ -309,17 +354,120 @@ async def voice(request: Request, file: UploadFile = File(...)) -> JSONResponse:
     if len(raw) > 10 * 1024 * 1024:
         raise HTTPException(413, "аудио больше 10 МБ")
     try:
+        if engine == "cloud":
+            if not CLOUD_STT_URL or not CLOUD_STT_KEY:
+                return JSONResponse({"detail": "облачный STT не настроен"}, status_code=503)
+            try:
+                with httpx.Client(timeout=120) as cloud_client:
+                    cloud_resp = cloud_client.post(
+                        CLOUD_STT_URL.rstrip("/") + "/audio/transcriptions",
+                        headers={"Authorization": f"Bearer {CLOUD_STT_KEY}"},
+                        files={"file": (file.filename or "audio.m4a", raw,
+                                        file.content_type or "audio/mp4")},
+                        data={"model": model or CLOUD_STT_MODEL, "language": language or "ru"},
+                    )
+                if cloud_resp.status_code >= 400:
+                    return JSONResponse({"detail": "ошибка облачного распознавания"}, status_code=502)
+                return JSONResponse({"text": str((cloud_resp.json() or {}).get("text") or "")})
+            except Exception:
+                return JSONResponse({"detail": "облачный STT недоступен"}, status_code=503)
         with httpx.Client(timeout=120) as client:
             response = client.post(
                 f"{STT_URL}/v1/audio/transcriptions",
                 files={"file": (file.filename or "audio.m4a", raw,
                                 file.content_type or "audio/mp4")},
-                data={"model": "vosk", "language": "ru"})
+                data={"model": model or "vosk", "language": language or "ru"})
     except httpx.HTTPError:
         raise HTTPException(503, "распознавание недоступно")
     if response.status_code != 200:
         raise HTTPException(502, "ошибка распознавания")
     return JSONResponse({"text": response.json().get("text", "")})
+
+
+# Локальный контейнер TTS отвечает 413 на вход длиннее TTS_MAX_CHARS (1000).
+TTS_CHUNK_CHARS = 1000
+_SENTENCE_END = ".!?…"
+
+
+def _split_tts_text(text: str, limit: int = TTS_CHUNK_CHARS) -> list[str]:
+    """Разбивает текст на куски ≤ limit по границам предложений, затем слов."""
+    sentences: list[str] = []
+    start = 0
+    for i, char in enumerate(text):
+        if char != "\n" and char not in _SENTENCE_END:
+            continue
+        end = i + 1
+        if char != "\n":
+            while end < len(text) and text[end] in "\"'”’»)]}":
+                end += 1
+            # точка в числах и сокращениях — не конец предложения
+            if end < len(text) and not text[end].isspace():
+                continue
+        sentences.append(text[start:end])
+        start = end
+    if start < len(text):
+        sentences.append(text[start:])
+
+    chunks: list[str] = []
+    current = ""
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            chunks.append(current)
+            current = ""
+
+    def append(part: str) -> None:
+        nonlocal current
+        if not part:
+            return
+        if current and len(current) + 1 + len(part) > limit:
+            flush()
+        current = f"{current} {part}".strip()
+
+    for sentence in sentences:
+        words = sentence.split()
+        if not words:
+            continue
+        if len(" ".join(words)) <= limit:
+            append(" ".join(words))
+            continue
+        for word in words:
+            if len(word) > limit:
+                flush()
+                for pos in range(0, len(word), limit):
+                    piece = word[pos:pos + limit]
+                    if pos + limit < len(word):
+                        chunks.append(piece)
+                    else:
+                        append(piece)
+            else:
+                append(word)
+    flush()
+    return chunks
+
+
+def _concat_wav(parts: list[bytes]) -> bytes:
+    """Склеивает WAV-части в один файл с единственным заголовком."""
+    if not parts:
+        raise HTTPException(502, "TTS не вернул аудио")
+    buffer = io.BytesIO()
+    try:
+        with wave.open(buffer, "wb") as out:
+            for index, part in enumerate(parts):
+                with wave.open(io.BytesIO(part), "rb") as src:
+                    params = src.getparams()
+                    if src.getcomptype() != "NONE":
+                        raise HTTPException(502, "TTS вернул сжатый WAV")
+                    if index == 0:
+                        out.setparams(params)
+                    elif (params.nchannels, params.sampwidth, params.framerate) != (
+                            out.getnchannels(), out.getsampwidth(), out.getframerate()):
+                        raise HTTPException(502, "несовместимые WAV-части от TTS")
+                    out.writeframes(src.readframes(src.getnframes()))
+    except wave.Error:
+        raise HTTPException(502, "TTS вернул некорректный WAV")
+    return buffer.getvalue()
 
 
 @router.post("/speak")
@@ -332,15 +480,44 @@ async def speak(request: Request) -> Response:
         raise HTTPException(400, "пустой текст")
     if len(text) > 4000:
         text = text[:4000]
-    payload = {"model": "tts", "input": text, "voice": data.get("voice") or "baya"}
+    engine = str(data.get("engine") or "local")
+    model = str(data.get("model") or "tts")
+    voice = str(data.get("voice") or "baya")
+    response_format = str(data.get("response_format") or "wav")
+    if engine == "cloud":
+        if not CLOUD_TTS_URL or not CLOUD_TTS_KEY:
+            return JSONResponse({"detail": "облачный TTS не настроен"}, status_code=503)
+        payload = {"model": model or CLOUD_TTS_MODEL, "input": text,
+                   "voice": voice, "response_format": response_format}
+        try:
+            with httpx.Client(timeout=120) as cloud_client:
+                cloud_resp = cloud_client.post(
+                    CLOUD_TTS_URL.rstrip("/") + "/audio/speech",
+                    headers={"Authorization": f"Bearer {CLOUD_TTS_KEY}"},
+                    json=payload,
+                )
+        except httpx.HTTPError:
+            raise HTTPException(503, "облачный синтез речи недоступен")
+        if cloud_resp.status_code >= 400:
+            raise HTTPException(502, "ошибка облачного синтеза речи")
+        media_type = {"mp3": "audio/mpeg"}.get(response_format, f"audio/{response_format}")
+        return Response(content=cloud_resp.content, media_type=media_type)
+    # Локальный TTS всегда отдаёт WAV, какой бы формат ни запросил клиент.
+    # Длинный текст режем по предложениям/словам: контейнер не примет >1000 символов.
+    payload = {"model": model, "voice": voice,
+               "response_format": response_format}
+    wav_parts: list[bytes] = []
     try:
         with httpx.Client(timeout=120) as client:
-            response = client.post(f"{TTS_URL}/v1/audio/speech", json=payload)
+            for chunk in _split_tts_text(text):
+                response = client.post(f"{TTS_URL}/v1/audio/speech",
+                                       json={**payload, "input": chunk})
+                if response.status_code != 200:
+                    raise HTTPException(502, "ошибка синтеза речи")
+                wav_parts.append(response.content)
     except httpx.HTTPError:
         raise HTTPException(503, "синтез речи недоступен")
-    if response.status_code != 200:
-        raise HTTPException(502, "ошибка синтеза речи")
-    return Response(content=response.content, media_type="audio/wav")
+    return Response(content=_concat_wav(wav_parts), media_type="audio/wav")
 
 
 @router.post("/note")

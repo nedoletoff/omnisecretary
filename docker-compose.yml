@@ -466,6 +466,12 @@ services:
       WEATHER_CITY: ${WEATHER_CITY:-}
       STT_URL: http://stt:8000
       TTS_URL: http://tts:8000
+      CLOUD_STT_URL: ${CLOUD_STT_URL:-}
+      CLOUD_STT_KEY: ${CLOUD_STT_KEY:-}
+      CLOUD_STT_MODEL: ${CLOUD_STT_MODEL:-whisper-1}
+      CLOUD_TTS_URL: ${CLOUD_TTS_URL:-}
+      CLOUD_TTS_KEY: ${CLOUD_TTS_KEY:-}
+      CLOUD_TTS_MODEL: ${CLOUD_TTS_MODEL:-gpt-4o-mini-tts}
       VAULT_MANAGER_URL: http://vault-manager:8000
       VIKUNJA_BASE_URL: http://vikunja:3456
       VIKUNJA_API_TOKEN: ${VIKUNJA_API_TOKEN:-}

@@ -261,7 +261,15 @@ fun ChatScreen(
         if (text.isBlank()) return
         scope.launch {
             try {
-                val bytes = api.speak(text)
+                // Голос TTS-персоны ассистента, с fallback на общие настройки.
+                val bytes = api.speak(
+                    text,
+                    voice = Session.chatVoice,
+                    engine = Session.voiceTtsEngine,
+                    model = Session.chatVoiceModel,
+                    language = Session.voiceTtsLanguage,
+                    responseFormat = Session.voiceTtsFormat,
+                )
                 withContext(Dispatchers.Main) {
                     playWav(context, bytes) {
                         if (handsFree && !busy && !recording) startRecording()
@@ -484,7 +492,12 @@ fun ChatScreen(
             scope.launch {
                 busy = true
                 try {
-                    val text = api.transcribe(bytes)
+                    val text = api.transcribe(
+                        bytes,
+                        engine = Session.voiceSttEngine,
+                        model = Session.voiceSttModel,
+                        language = Session.voiceSttLanguage,
+                    )
                     if (text.isBlank()) notice = "Речь не распознана"
                     else if (handsFree) send(text) else input = text
                 } catch (failure: Exception) {

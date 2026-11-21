@@ -1,5 +1,6 @@
 package ru.nedoletoff.omnisecretary.data
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -14,6 +15,8 @@ import java.util.concurrent.TimeUnit
 data class ChatSummary(val id: String, val title: String, val updated: Long)
 data class ChatMessage(val role: String, val content: String, val timestamp: Long, val id: String = "")
 data class ModelInfo(val id: String, val name: String, val description: String)
+/** Справочник TTS, возвращаемый /api/m/voices. */
+data class VoiceCatalog(val voices: List<String>, val engines: List<String>)
 data class TodayEvent(
     val id: String,
     val time: String,
@@ -400,29 +403,104 @@ class Api(private val server: String, private val token: String = "") {
         )
     }
 
-    suspend fun transcribe(audio: ByteArray, name: String = "voice.m4a"): String =
-        withContext(Dispatchers.IO) {
-            val part = MultipartBody.Builder().setType(MultipartBody.FORM)
-                .addFormDataPart("file", name,
-                    audio.toRequestBody("audio/mp4".toMediaType()))
-                .addFormDataPart("model", "vosk")
-                .build()
-            val request = Request.Builder().url(base() + "/api/m/voice")
-                .header("Authorization", "Bearer $token")
-                .post(part).build()
-            client.newCall(request).execute().use { response ->
-                val text = response.body?.string().orEmpty()
-                if (!response.isSuccessful) error("HTTP ${response.code}")
-                JSONObject(text).optString("text")
+    /**
+     * Распознавание речи. Необязательные поля добавляются в multipart только
+     * когда они заданы; без них сервер использует свои значения по умолчанию.
+     */
+    suspend fun transcribe(
+        audio: ByteArray,
+        name: String = "voice.m4a",
+        engine: String? = null,
+        model: String? = null,
+        language: String? = null,
+    ): String = withContext(Dispatchers.IO) {
+        val part = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", name, audio.toRequestBody("audio/mp4".toMediaType()))
+        if (engine != null) part.addFormDataPart("engine", engine)
+        if (model != null) part.addFormDataPart("model", model)
+        if (language != null) part.addFormDataPart("language", language)
+        val request = Request.Builder().url(base() + "/api/m/voice")
+            .header("Authorization", "Bearer $token")
+            .post(part.build()).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val detail = runCatching {
+                    JSONObject(response.body?.string().orEmpty()).optString("detail")
+                }.getOrDefault("")
+                error(if (detail.isNotBlank()) detail else "HTTP ${response.code}")
             }
+            JSONObject(response.body?.string().orEmpty()).optString("text")
         }
+    }
 
-    suspend fun speak(text: String): ByteArray = withContext(Dispatchers.IO) {
-        val body = JSONObject().put("text", text).put("voice", "baya")
+    /** Синтез речи. Хардкод голоса убран: значение по умолчанию подставляет сервер. */
+    suspend fun speak(
+        text: String,
+        voice: String? = null,
+        engine: String? = null,
+        model: String? = null,
+        language: String? = null,
+        responseFormat: String? = null,
+    ): ByteArray = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("text", text)
+        if (voice != null) body.put("voice", voice)
+        if (engine != null) body.put("engine", engine)
+        if (model != null) body.put("model", model)
+        if (language != null) body.put("language", language)
+        if (responseFormat != null) body.put("response_format", responseFormat)
         client.newCall(request("/api/m/speak", "POST", body).build()).execute().use { response ->
-            if (!response.isSuccessful) error("HTTP ${response.code}")
+            if (!response.isSuccessful) {
+                val detail = runCatching {
+                    JSONObject(response.body?.string().orEmpty()).optString("detail")
+                }.getOrDefault("")
+                error(if (detail.isNotBlank()) detail else "HTTP ${response.code}")
+            }
             response.body?.bytes() ?: ByteArray(0)
         }
+    }
+
+    /** Список голосов для конкретного движка (используется в настройках TTS). */
+    suspend fun voices(engine: String): List<String> = withContext(Dispatchers.IO) {
+        try {
+            val encoded = java.net.URLEncoder.encode(engine, "UTF-8")
+            val array = call("/api/m/voices?engine=$encoded").optJSONArray("voices") ?: JSONArray()
+            (0 until array.length()).mapNotNull { i ->
+                when (val item = array.opt(i)) {
+                    is String -> item.takeIf { it.isNotBlank() }
+                    is JSONObject -> item.optString("name")
+                        .ifBlank { item.optString("id") }
+                        .ifBlank { item.optString("voice") }
+                        .takeIf { it.isNotBlank() }
+                    else -> null
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Справочник голосов и движков TTS с сервера (GET /api/m/voices). */
+    suspend fun voices(): VoiceCatalog = withContext(Dispatchers.IO) {
+        val body = call("/api/m/voices")
+        val voiceArray = body.optJSONArray("voices") ?: JSONArray()
+        val engineArray = body.optJSONArray("engines") ?: JSONArray()
+        VoiceCatalog(
+            voices = (0 until voiceArray.length()).mapNotNull { i ->
+                when (val item = voiceArray.opt(i)) {
+                    is String -> item.ifBlank { null }
+                    is JSONObject -> item.optString("name")
+                        .ifBlank { item.optString("id") }
+                        .ifBlank { item.optString("voice") }
+                        .ifBlank { null }
+                    else -> null
+                }
+            },
+            engines = (0 until engineArray.length()).mapNotNull { i ->
+                engineArray.optString(i).ifBlank { null }
+            },
+        )
     }
 
     suspend fun saveNote(title: String, text: String, folder: String = "AI/Inbox"): String =

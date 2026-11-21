@@ -89,8 +89,15 @@
     });
   }
 
+  // Панель нужна только в чате Open WebUI — на страницах входа и портала
+  // она мешает и дублирует нативную навигацию.
+  function isChatPage() {
+    var path = window.location.pathname || '/';
+    return path === '/' || path.indexOf('/#') === 0;
+  }
+
   function apply() {
-    injectMenu();
+    if (isChatPage()) injectMenu();
     replaceLogo();
   }
 
